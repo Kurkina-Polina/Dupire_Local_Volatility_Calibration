@@ -5,22 +5,37 @@ from mpl_toolkits.mplot3d import Axes3D
 from scipy.stats import norm
 import pandas as pd
 
+#FIXME: вынести в отдельный файл с формулами
 def get_option_parameters(ticker, start_date, end_date):
     """
     Получает все необходимые параметры для модели Блэка-Шоулза
+    ticker название комании (тикера)
+    start_date дата начала в формате "2016-01-01"
+    end_date дата конца в формате "2016-01-01" минимум 30 дней разницы
     """
     # Загружаем данные
     data = yf.download(ticker, start=start_date, end=end_date)
 
-    # 1. Текущая цена (последняя цена закрытия)
+    # 1. Время (предположим, что мы оцениваем опцион на 3 месяца вперед)
+    tau = 90 / 365.0  # 90 дней в долях года
+
+    # 2. Текущая цена (последняя цена закрытия)
     S_t = float(data['Close'].iloc[-1])
 
-    # 2. Волатильность (историческая, 30-дневная)
+    # 3. Сигма - волатильность (историческая, 30-дневная)
+    #сигма is the standard deviation of the stock's returns. This is the square root of the quadratic
+    # variation of the stock's log price process, a measure of its volatility.
+
+    # Логарифмическая доходность на основе цен закрытия shift(1) сдвигает данные на одну строку назад
     data['Returns'] = np.log(data['Close'] / data['Close'].shift(1))
+    # rolling(window=30) создает скользящее окно из 30 дней; std() высчитывает стандартное отклонение
+    # * np.sqrt(252) чтобы перевести дневную волатильность в годовую (252 торговых дня в году)
     data['Volatility'] = data['Returns'].rolling(window=30).std() * np.sqrt(252)
+    # Последняя рассчитанная волатильность
     sigma = float(data['Volatility'].iloc[-1])
 
-    # 3. Безрисковая ставка (из казначейских векселей)
+    # 4. r - безрисковая ставка (из казначейских векселей) 13 WEEK TREASURY BILL (^IRX)
+    # векселя — это, как правило, краткосрочные, внебиржевые долговые бумаги
     try:
         tbill = yf.Ticker("^IRX")
         tbill_data = tbill.history(period="1d")
@@ -29,50 +44,50 @@ def get_option_parameters(ticker, start_date, end_date):
         r = 0.02  # Fallback значение 2%
         print("Используется fallback ставка 2%")
 
-    # 4. Время (предположим, что мы оцениваем опцион на 3 месяца вперед)
-    T_minus_t = 90 / 365.0  # 90 дней в долях года
-
     # 5. Цена исполнения (можно взять как текущую цену для ATM опциона)
     K = S_t  # At-the-money
 
     parameters = {
         'S_t': S_t,
         'K': K,
-        'T_minus_t': T_minus_t,
+        'tau': tau,
         'r': r,
         'sigma': sigma
     }
 
     return parameters, data
 
-def black_scholes(S, K, T, r, sigma, option_type='call'):
+#FIXME: вынести в отдельный файл с формулами
+def black_scholes(S, K, tau, r, sigma, option_type='call'):
     """
     S: текущая цена актива
     K: страйк цена
-    T: время до экспирации (в годах)
+    tau: время до экспирации (в годах)
     r: безрисковая ставка
     sigma: волатильность
     """
-    if T <= 0:
+    if tau <= 0: # если опцион уже истек то модель не работает
         if option_type == 'call':
             return max(S - K, 0)
         else:
             return max(K - S, 0)
 
-    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-    d2 = d1 - sigma * np.sqrt(T)
+    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * tau) / (sigma * np.sqrt(tau))
+    d2 = d1 - sigma * np.sqrt(tau)
 
     if option_type == 'call':
-        price = S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+        price = S * norm.cdf(d1) - K * np.exp(-r * tau) * norm.cdf(d2)
     else:  # put
-        price = K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+        price = K * np.exp(-r * tau) * norm.cdf(-d2) - S * norm.cdf(-d1)
 
     return price
 
 if __name__ == "__main__":
 
     ticker = "SPY"
-    # Следующие сроки до вызова get_option_parameters чисто для визуализации исходных данных
+
+    # FIXME: вынести в отдельный файл графиков (фунция типо "исходные данные")
+    # Визуализация исходных данных
     data_init = yf.download(ticker, start="2016-01-01", end="2017-06-01")
     S_i = data_init['Close'].values  # Цены актива
     t_j = np.arange(len(S_i))   # Временные точки (в днях)
@@ -91,24 +106,22 @@ if __name__ == "__main__":
     # Извлекаем параметры
     S_t = params['S_t']
     K = params['K']
-    T_minus_t = params['T_minus_t']
+    tau = params['tau']
     r = params['r']
     sigma = params['sigma']
 
     print("Рассчитанные параметры для модели Блэка-Шоулза:")
     print(f"Текущая цена актива (S_t): {S_t:.2f}$")
     print(f"Цена исполнения (K): {K:.2f}$")
-    print(f"Время до экспирации (T): {T_minus_t:.3f} лет")
+    print(f"Время до экспирации (T): {tau:.3f} лет")
     print(f"Безрисковая ставка (r): {r:.4f} ({r*100:.2f}%)")
     print(f"Волатильность (σ): {sigma:.4f} ({sigma*100:.2f}%)")
 
     # Вычисляем цену опциона колл по Блэку-Шоулзу
-    call_price = black_scholes(S_t, K, T_minus_t, r, sigma, option_type='call')
-
+    call_price = black_scholes(S_t, K, tau, r, sigma, option_type='call')
     print(f"\nЦена опциона CALL: {call_price:.2f}$")
 
-    #FIXME: building chart move to separated func
-
+    #FIXME: building chart move to separated func (фунция типо "колл опцион")
     # Подготавливаем данные для 3D графика
     S_i = data['Close'].values  # Исторические цены
     t_j = np.arange(len(S_i))   # Временные точки
@@ -143,14 +156,15 @@ if __name__ == "__main__":
     fig.colorbar(surf, ax=ax, shrink=0.5, aspect=5, label='Цена опциона ($)')
 
     # Добавляем точку для текущих параметров
-    current_call_price = black_scholes(S_t, K, T_minus_t, r, sigma, option_type='call')
-    ax.scatter(S_t, T_minus_t, current_call_price, color='red', s=100,
-               label=f'Текущая точка: S={S_t:.1f}, T={T_minus_t:.2f}')
+    current_call_price = black_scholes(S_t, K, tau, r, sigma, option_type='call')
+    ax.scatter(S_t, tau, current_call_price, color='red', s=100,
+               label=f'Текущая точка: S={S_t:.1f}, T={tau:.2f}')
     ax.legend()
 
     plt.tight_layout()
     plt.show()
 
+    #FIXME вынести в файл с функциями (фунция типо "доп функции")
     # Дополнительная визуализация: исторические цены и волатильность
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
 
