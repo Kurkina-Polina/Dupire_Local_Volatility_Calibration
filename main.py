@@ -1,5 +1,7 @@
 from black_scholes import run_black_scholes
 from building_charts import *
+import numpy as np
+from crank_nicolson_dupire import *
 
 def build_dupire_surface(data, S_t, r, sigma, tau):
     # Сетка для Дюпира: разные страйки K и времена T
@@ -15,6 +17,31 @@ def build_dupire_surface(data, S_t, r, sigma, tau):
             C_grid[i, j] = black_scholes(S_t, K_range[j], T_range[i], r, sigma, 'call')
 
     return K_grid, T_grid, C_grid
+
+def build_dupire_surface_cn(data, S_t, r, sigma, tau):
+    """
+    Построение поверхности Дюпира с использованием метода Кранка-Николсона
+    """
+    # Параметры для численного решения
+    K_min = S_t * 0.5
+    K_max = S_t * 1.5
+    T_max = 1.0
+    N = 100  # шаги по страйку
+    M = 100  # шаги по времени
+    
+    print("Решение уравнения Дюпира методом Кранка-Николсона...")
+    
+    # Решаем уравнение Дюпира
+    K, T, C_dupire = solve_dupire_pde(
+        S0=S_t, r=r, initial_vol=sigma,
+        K_min=K_min, K_max=K_max, T_max=T_max,
+        N=N, M=M, option_type='call'
+    )
+    
+    # Создаем сетку для совместимости с существующим кодом
+    K_grid, T_grid = np.meshgrid(K, T)
+    
+    return K_grid, T_grid, C_dupire, K, T
 
 def calculate_dupire_volatility(K_grid, T_grid, C_grid, r, d=0):
     """
@@ -40,6 +67,39 @@ def calculate_dupire_volatility(K_grid, T_grid, C_grid, r, d=0):
             else:
                 local_vol_grid[i,j] = np.nan
 
+    return local_vol_grid
+
+def calculate_dupire_volatility_improved(K_grid, T_grid, C_grid, r):
+    """
+    Улучшенный расчет локальной волатильности
+    """
+    local_vol_grid = np.zeros_like(C_grid)
+    M, N = C_grid.shape
+    
+    dT = T_grid[1, 0] - T_grid[0, 0] if M > 1 else 0.1
+    dK = K_grid[0, 1] - K_grid[0, 0]
+    
+    for i in range(1, M-1):
+        for j in range(1, N-1):
+            K_val = K_grid[i, j]
+            
+            # Численные производные с центральными разностями
+            dC_dT = (C_grid[i+1, j] - C_grid[i-1, j]) / (2 * dT)
+            dC_dK = (C_grid[i, j+1] - C_grid[i, j-1]) / (2 * dK)
+            d2C_dK2 = (C_grid[i, j+1] - 2*C_grid[i, j] + C_grid[i, j-1]) / (dK**2)
+            
+            # Формула Дюпира
+            if d2C_dK2 > 1e-10:  # избегаем деления на 0
+                numerator = 2 * (dC_dT + r * K_val * dC_dK)
+                denominator = (K_val**2) * d2C_dK2
+                
+                if numerator > 0 and denominator > 0:
+                    local_vol_grid[i, j] = np.sqrt(numerator / denominator)
+                else:
+                    local_vol_grid[i, j] = np.nan
+            else:
+                local_vol_grid[i, j] = np.nan
+    
     return local_vol_grid
 
 def plot_dupire_surface(K_grid, T_grid, local_vol_surface):
@@ -145,7 +205,7 @@ if __name__ == "__main__":
     # Визуализация исходных данных
     plot_initial_data(t_j, S_i, ticker)
 
-    #Собираем данные для формулыз
+    # Собираем данные для формулы
     params, data = get_option_parameters(ticker, "2016-01-01", "2017-06-01")
 
     # Извлекаем параметры
@@ -171,15 +231,44 @@ if __name__ == "__main__":
     # Дополнительная визуализация: исторические цены и волатильность
     plot_price_volatility(data, ticker)
 
-    # 1. Строим поверхность цен C(K,T)
+    print("\n" + "="*60)
+    print("КЛАССИЧЕСКИЙ ПОДХОД ДЮПИРА")
+    print("="*60)
+    
+    # 1. Классический подход: строим поверхность цен C(K,T) через Блэка-Шоулза
     K_grid, T_grid, C_grid = build_dupire_surface(data, S_t, r, sigma, tau)
 
     # 2. Вычисляем локальную волатильность по формуле Дюпира
     local_vol_surface = calculate_dupire_volatility(K_grid, T_grid, C_grid, r)
 
     # 3. Визуализируем результат
-    print("\n--- Формула Дюпира ---")
+    print("\n--- Формула Дюпира (классический подход) ---")
     print(f"Локальная волатильность (средняя): {np.nanmean(local_vol_surface):.4f}")
 
-    # Можно добавить график поверхности локальной волатильности
+    # Визуализация классического подхода
     plot_dupire_surface(K_grid, T_grid, local_vol_surface)
+
+    print("\n" + "="*60)
+    print("МЕТОД КРАНКА-НИКОЛСОНА ДЛЯ УРАВНЕНИЯ ДЮПИРА")
+    print("="*60)
+    
+    # 1. Решаем уравнение Дюпира численно методом Кранка-Николсона
+    K_grid_cn, T_grid_cn, C_grid_cn, K_array, T_array = build_dupire_surface_cn(data, S_t, r, sigma, tau)
+    
+    # 2. Вычисляем локальную волатильность из численного решения
+    local_vol_surface_cn = calculate_dupire_volatility_improved(K_grid_cn, T_grid_cn, C_grid_cn, r)
+    
+    # 3. Визуализируем решение Дюпира методом Кранка-Николсона
+    plot_dupire_cn_solution(K_grid_cn[0, :], T_grid_cn[:, 0], C_grid_cn, local_vol_surface_cn)
+    
+    # 4. Сравнение с Блэка-Шоулз (ИСПРАВЛЕННЫЙ ВЫЗОВ)
+    compare_with_black_scholes(S_t, K, tau, r, sigma, C_grid_cn, K_array, T_array)
+    
+    # 5. Визуализация локальной волатильности из метода Кранка-Николсона
+    print("\n--- Визуализация поверхности локальной волатильности (Кранк-Николсон) ---")
+    plot_dupire_surface(K_grid_cn, T_grid_cn, local_vol_surface_cn)
+    
+    print("\n--- Анализ решения Дюпира методом Кранка-Николсона ---")
+    print(f"Диапазон страйков: {K_grid_cn[0, 0]:.1f} - {K_grid_cn[0, -1]:.1f}")
+    print(f"Диапазон времени: {T_grid_cn[0, 0]:.2f} - {T_grid_cn[-1, 0]:.2f} лет")
+    print(f"Средняя локальная волатильность: {np.nanmean(local_vol_surface_cn):.4f}")
