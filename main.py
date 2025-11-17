@@ -1,4 +1,3 @@
-from building_charts import *
 from crank_nicolson_dupire import *
 from black_scholes import *
 
@@ -13,7 +12,7 @@ def build_dupire_surface(data, S_t, r, sigma, tau):
     # Цена опциона для каждого (K, T)
     for i in range(len(T_range)):
         for j in range(len(K_range)):
-            C_grid[i, j] = black_scholes(S_t, K_range[j], T_range[i], r, sigma, 'call')
+            C_grid[i, j] = black_scholes(S_t, K_range[j], T_range[i], r, sigma)
 
     return K_grid, T_grid, C_grid
 
@@ -196,33 +195,40 @@ def plot_dupire_surface(K_grid, T_grid, local_vol_surface):
     print(f"Стандартное отклонение: {np.nanstd(local_vol_surface):.4f}")
 
 if __name__ == "__main__":
-    # Вычисление значения стоимости опционов по формуле Блэка-Шоулза и построение трехмерного графика C(Si,ti)
-    ticker = "SPY"
-    # Собираем данные для формулы
-    params, data = get_option_parameters(ticker, "2016-01-01", "2017-06-01")
-
-    # Извлекаем параметры
+    # Конфигурация
+    TICKER = "SPY"
+    START_DATE = "2016-01-01"
+    END_DATE = "2017-06-01"
+    # Подготовка данных
+    params, data = get_option_parameters(TICKER, START_DATE, END_DATE)
+    # Извлечение параметров
     S_t = params['S_t']
     K = params['K']
     tau = params['tau']
     r = params['r']
     sigma = params['sigma']
 
-    print("Рассчитанные параметры для модели Блэка-Шоулза:")
-    print(f"Текущая цена актива (S_t): {S_t:.2f}$")
-    print(f"Цена исполнения (K): {K:.2f}$")
-    print(f"Время до экспирации (T): {tau:.3f} лет")
-    print(f"Безрисковая ставка (r): {r:.4f} ({r*100:.2f}%)")
-    print(f"Волатильность (σ): {sigma:.4f} ({sigma*100:.2f}%)")
+    print("Параметры модели:")
+    print(f"   • Актив: {TICKER}")
+    print(f"   • Текущая цена (S_t): {S_t:.2f}$")
+    print(f"   • Цена исполнения (K): {K:.2f}$")
+    print(f"   • Время до экспирации (τ): {tau:.3f} лет")
+    print(f"   • Безрисковая ставка (r): {r:.4f} ({r*100:.2f}%)")
+    print(f"   • Волатильность (σ): {sigma:.4f} ({sigma*100:.2f}%)")
 
-    # Вычисляем цену опциона колл по Блэку-Шоулзу
-    call_price = black_scholes(S_t, K, tau, r, sigma, option_type='call')
+    print("\n" + "="*60)
+    print("МОДЕЛЬ БЛЭКА-ШОУЛЗА")
+    print("="*60)
+
+    # 1. Вычисляем цену опциона колл по Блэку-Шоулзу
+    call_price = black_scholes(S_t, K, tau, r, sigma)
     print(f"\nЦена опциона CALL: {call_price:.2f}$")
 
-    # Трехмерный график C(Si,ti)
-    build_3Dchart(data, K, r, sigma, S_t, tau)
-    # Дополнительная визуализация: исторические цены и волатильность
-    plot_price_volatility(data, ticker)
+    # 2. построение трехмерного графика C(Si,ti) по Блэку-Шоулзу
+    plot_black_scholes_surface(data, K, r, sigma, S_t, tau)
+
+    # 3. Дополнительная визуализация: исторические цены и волатильность
+    plot_price_volatility(data, TICKER)
 
     print("\n" + "="*60)
     print("КЛАССИЧЕСКИЙ ПОДХОД ДЮПИРА")
