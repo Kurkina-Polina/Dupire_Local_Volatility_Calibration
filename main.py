@@ -1,7 +1,6 @@
-from black_scholes import run_black_scholes
 from building_charts import *
-import numpy as np
 from crank_nicolson_dupire import *
+from black_scholes import *
 
 def build_dupire_surface(data, S_t, r, sigma, tau):
     # Сетка для Дюпира: разные страйки K и времена T
@@ -199,12 +198,6 @@ def plot_dupire_surface(K_grid, T_grid, local_vol_surface):
 if __name__ == "__main__":
     # Вычисление значения стоимости опционов по формуле Блэка-Шоулза и построение трехмерного графика C(Si,ti)
     ticker = "SPY"
-    data_init = yf.download(ticker, start="2016-01-01", end="2017-06-01")
-    S_i = data_init['Close'].values  # Цены актива
-    t_j = np.arange(len(S_i))   # Временные точки (в днях)
-    # Визуализация исходных данных
-    plot_initial_data(t_j, S_i, ticker)
-
     # Собираем данные для формулы
     params, data = get_option_parameters(ticker, "2016-01-01", "2017-06-01")
 
@@ -245,11 +238,11 @@ if __name__ == "__main__":
     print("\n--- Формула Дюпира (классический подход) ---")
     print(f"Локальная волатильность (средняя): {np.nanmean(local_vol_surface):.4f}")
 
-    # Визуализация классического подхода
+    # Построение поверхности Дюпира
     plot_dupire_surface(K_grid, T_grid, local_vol_surface)
 
     print("\n" + "="*60)
-    print("МЕТОД КРАНКА-НИКОЛСОНА ДЛЯ УРАВНЕНИЯ ДЮПИРА")
+    print("--- Метод Кранка-Николсона для уравнения Дюпира ---")
     print("="*60)
     
     # 1. Решаем уравнение Дюпира численно методом Кранка-Николсона
@@ -261,7 +254,7 @@ if __name__ == "__main__":
     # 3. Визуализируем решение Дюпира методом Кранка-Николсона
     plot_dupire_cn_solution(K_grid_cn[0, :], T_grid_cn[:, 0], C_grid_cn, local_vol_surface_cn)
     
-    # 4. Сравнение с Блэка-Шоулз (ИСПРАВЛЕННЫЙ ВЫЗОВ)
+    # 4. Сравнение с Блэка-Шоулз
     compare_with_black_scholes(S_t, K, tau, r, sigma, C_grid_cn, K_array, T_array)
     
     # 5. Визуализация локальной волатильности из метода Кранка-Николсона
