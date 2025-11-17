@@ -203,3 +203,61 @@ def compare_with_black_scholes(S0, K_bs, T_bs, r, sigma, C_dupire, K_dupire, T_d
     print(f"Относительная ошибка: {abs(C_bs - C_dupire_val)/C_bs*100:.2f}%")
     
     return C_bs, C_dupire_val
+
+def build_dupire_surface_cn(data, S_t, r, sigma, tau):
+    """
+    Построение поверхности Дюпира с использованием метода Кранка-Николсона
+    """
+    # Параметры для численного решения
+    K_min = S_t * 0.5
+    K_max = S_t * 1.5
+    T_max = 1.0
+    N = 100  # шаги по страйку
+    M = 100  # шаги по времени
+
+    print("Решение уравнения Дюпира методом Кранка-Николсона...")
+
+    # Решаем уравнение Дюпира
+    K, T, C_dupire = solve_dupire_pde(
+        S0=S_t, r=r, initial_vol=sigma,
+        K_min=K_min, K_max=K_max, T_max=T_max,
+        N=N, M=M, option_type='call'
+    )
+
+    # Создаем сетку для совместимости с существующим кодом
+    K_grid, T_grid = np.meshgrid(K, T)
+
+    return K_grid, T_grid, C_dupire, K, T
+
+def calculate_dupire_volatility_improved(K_grid, T_grid, C_grid, r):
+    """
+    Улучшенный расчет локальной волатильности
+    """
+    local_vol_grid = np.zeros_like(C_grid)
+    M, N = C_grid.shape
+
+    dT = T_grid[1, 0] - T_grid[0, 0] if M > 1 else 0.1
+    dK = K_grid[0, 1] - K_grid[0, 0]
+
+    for i in range(1, M-1):
+        for j in range(1, N-1):
+            K_val = K_grid[i, j]
+
+            # Численные производные с центральными разностями
+            dC_dT = (C_grid[i+1, j] - C_grid[i-1, j]) / (2 * dT)
+            dC_dK = (C_grid[i, j+1] - C_grid[i, j-1]) / (2 * dK)
+            d2C_dK2 = (C_grid[i, j+1] - 2*C_grid[i, j] + C_grid[i, j-1]) / (dK**2)
+
+            # Формула Дюпира
+            if d2C_dK2 > 1e-10:  # избегаем деления на 0
+                numerator = 2 * (dC_dT + r * K_val * dC_dK)
+                denominator = (K_val**2) * d2C_dK2
+
+                if numerator > 0 and denominator > 0:
+                    local_vol_grid[i, j] = np.sqrt(numerator / denominator)
+                else:
+                    local_vol_grid[i, j] = np.nan
+            else:
+                local_vol_grid[i, j] = np.nan
+
+    return local_vol_grid
