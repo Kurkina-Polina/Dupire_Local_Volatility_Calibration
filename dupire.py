@@ -121,22 +121,22 @@ def plot_dupire_surface(K_grid, T_grid, local_vol_surface):
     # 1. 3D поверхность (левый верх)
     ax1 = fig1.add_subplot(2, 2, 1, projection='3d')
     surf = ax1.plot_surface(K_grid, T_grid, clean_vol, cmap='viridis', alpha=0.8)
-    ax1.set_xlabel('Strike Price (K)')
-    ax1.set_ylabel('Time to Expiry (T)')
-    ax1.set_zlabel('Local Volatility')
-    ax1.set_title('3D Surface: Local Volatility')
+    ax1.set_xlabel('Цена исполнения (K)')
+    ax1.set_ylabel('Время до экспирации (T)')
+    ax1.set_zlabel('Локальная Волатильность')
+    ax1.set_title('Поверхность локальной волатильности')
     fig1.colorbar(surf, ax=ax1, shrink=0.6, aspect=20)
 
     # 2. Контурный график (правый верх)
     ax2 = fig1.add_subplot(2, 2, 2)
     contour = ax2.contourf(K_grid, T_grid, clean_vol, levels=20, cmap='viridis')
-    ax2.set_xlabel('Strike Price (K)')
-    ax2.set_ylabel('Time to Expiry (T)')
-    ax2.set_title('Contour Plot')
+    ax2.set_xlabel('Цена исполнения (K)')
+    ax2.set_ylabel('Время до экспирации (T)')
+    ax2.set_title('Контурный график локальной волатильности')
     plt.colorbar(contour, ax=ax2)
 
     # 3. Срез по времени (нижний ряд - занимает оба столбца)
-    ax3 = fig1.add_subplot(2, 1, 2)  # 2 строки, 1 столбец, позиция 2
+    ax3 = fig1.add_subplot(2, 1, 2)
     time_indices = [5, 15, 25]
     colors = ['red', 'blue', 'green']
 
@@ -145,9 +145,9 @@ def plot_dupire_surface(K_grid, T_grid, local_vol_surface):
             ax3.plot(K_grid[idx, :], clean_vol[idx, :], color=color, linewidth=2,
                      label=f'T = {T_grid[idx, 0]:.2f} years')
 
-    ax3.set_xlabel('Strike Price (K)')
-    ax3.set_ylabel('Local Volatility')
-    ax3.set_title('Fixed Time Slices')
+    ax3.set_xlabel('Цена исполнения (K)')
+    ax3.set_ylabel('Локальная волатильность')
+    ax3.set_title('Форма волатильности для разных сроков экспирации')
     ax3.legend()
     ax3.grid(True, alpha=0.3)
 
@@ -161,9 +161,9 @@ def plot_dupire_surface(K_grid, T_grid, local_vol_surface):
     im = ax1.imshow(clean_vol,
                     extent=[K_grid.min(), K_grid.max(), T_grid.min(), T_grid.max()],
                     aspect='auto', cmap='hot', origin='lower')
-    ax1.set_xlabel('Strike Price (K)')
-    ax1.set_ylabel('Time to Expiry (T)')
-    ax1.set_title('Heatmap: Local Volatility')
+    ax1.set_xlabel('Цена исполнения (K)')
+    ax1.set_ylabel('Время до экспирации (T)')
+    ax1.set_title('Интенсивность волатильности по страйкам и времени')
     plt.colorbar(im, ax=ax1, label='Volatility')
 
     # 5. Срез по страйкам (правая половина)
@@ -175,9 +175,9 @@ def plot_dupire_surface(K_grid, T_grid, local_vol_surface):
             ax2.plot(T_grid[:, idx], clean_vol[:, idx], color=color, linewidth=2,
                      label=f'K = {K_grid[0, idx]:.1f}')
 
-    ax2.set_xlabel('Time to Expiry (T)')
-    ax2.set_ylabel('Local Volatility')
-    ax2.set_title('Fixed Strike Slices')
+    ax2.set_xlabel('Время до экспирации (T)')
+    ax2.set_ylabel('Локальная волатильность')
+    ax2.set_title('Динамика волатильности для разных страйков')
     ax2.legend()
     ax2.grid(True, alpha=0.3)
 
