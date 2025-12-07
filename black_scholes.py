@@ -38,6 +38,8 @@ def get_option_parameters(ticker, start_date, end_date):
     """
     # Загружаем данные
     data = yf.download(ticker, start=start_date, end=end_date)
+    if data.empty:
+        raise ValueError(f"Не удалось загрузить котировки для {ticker} ({start_date}–{end_date})")
 
     # 1. Время (предположим, что мы оцениваем опцион на 3 месяца вперед)
     tau = 90 / 365.0  # 90 дней в долях года
@@ -54,8 +56,18 @@ def get_option_parameters(ticker, start_date, end_date):
     # rolling(window=30) создает скользящее окно из 30 дней; std() высчитывает стандартное отклонение
     # * np.sqrt(252) чтобы перевести дневную волатильность в годовую (252 торговых дня в году)
     data['Volatility'] = data['Returns'].rolling(window=30).std() * np.sqrt(252)
-    # Последняя рассчитанная волатильность
-    sigma = float(data['Volatility'].iloc[-1])
+
+    sigma_series = data['Volatility'].dropna()
+    sigma = float(sigma_series.iloc[-1]) if not sigma_series.empty else float('nan')
+    if not np.isfinite(sigma):
+        # fallback: используем стандартное отклонение всех доступных доходностей
+        sigma_fallback = data['Returns'].dropna().std() * np.sqrt(252)
+        if np.isfinite(sigma_fallback) and sigma_fallback > 0:
+            sigma = float(sigma_fallback)
+            print("Используется fallback волатильность из полной выборки доходностей")
+        else:
+            sigma = 0.2
+            print("Не удалось оценить волатильность, используется значение по умолчанию 20%")
 
     # 4. r - безрисковая ставка (из казначейских векселей) 13 WEEK TREASURY BILL (^IRX)
     # векселя — это, как правило, краткосрочные, внебиржевые долговые бумаги

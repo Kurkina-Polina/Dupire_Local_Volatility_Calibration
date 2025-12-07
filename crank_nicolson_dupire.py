@@ -1,14 +1,15 @@
 import numpy as np
 import scipy.linalg as la
 import matplotlib.pyplot as plt
+from scipy.ndimage import gaussian_filter
 from scipy.stats import norm
 
-def solve_dupire_pde(S0, r, initial_vol, K_min, K_max, T_max, N, M):
+def solve_dupire_pde(S0, r, initial_vol, K_min, K_max, T_max, N, M, sigma_grid=None):
     """
     Решение уравнения Дюпира методом Кранка-Николсона
     
     Уравнение Дюпира (forward PDE):
-    ∂C/∂T = (1/2)σ²(K,T)K²(∂²C/∂K²) - rK(∂C/∂K)
+    ∂C/∂T = (1/2)σ²(K,T)K²(∂²C/∂K²) - rK(∂C/∂K) + r·C
     
     Параметры:
     S0 : float
@@ -46,51 +47,53 @@ def solve_dupire_pde(S0, r, initial_vol, K_min, K_max, T_max, N, M):
     
     # Матрица цен опционов
     C = np.zeros((M, N))
-    # Начальное условие (при T=0)
-    C[0, :] = np.maximum(K - S0, 0)  # Payoff call опциона
+    # Начальное условие (при T=0): выплата колла max(S0 - K, 0)
+    C[0, :] = np.maximum(S0 - K, 0)
 
-    # Предположим постоянную волатильность для простоты
-    # В реальности здесь может быть поверхность σ(K,T)
-    sigma_grid = np.full((M, N), initial_vol)
+    # Волатильность: если передана sigma_grid — используем её, иначе константа
+    if sigma_grid is None:
+        sigma_grid = np.full((M, N), initial_vol)
     
     # Основной цикл по времени (forward in time - уравнение Дюпира)
     for m in range(M-1):
         # Построение матриц для Кранка-Николсона
-        A = np.zeros((N, N))
-        B = np.zeros((N, N))
-        
+        A = np.zeros((N, N))  # (I - 0.5*dt*L)
+        B = np.zeros((N, N))  # (I + 0.5*dt*L)
+
         for i in range(1, N-1):
             K_val = K[i]
             sigma = sigma_grid[m, i]
-            
-            # Коэффициенты уравнения Дюпира
-            alpha = 0.25 * dT * sigma**2 * K_val**2 / dK**2
-            beta = 0.25 * dT * r * K_val / dK
-            
-            # Матрица A (неявная часть - время m+1)
-            A[i, i-1] = -alpha + beta
-            A[i, i]   = 1 + 2 * alpha
-            A[i, i+1] = -alpha - beta
-            
-            # Матрица B (явная часть - время m)
-            B[i, i-1] = alpha - beta
-            B[i, i]   = 1 - 2 * alpha
-            B[i, i+1] = alpha + beta
-        
-        # Граничные условия
-        # При K = K_min
+
+            # Коэффициенты оператора L для PDE Дюпира: C_T = L(C)
+            alpha = 0.5 * sigma**2 * K_val**2 / (dK**2)
+            beta = r * K_val / (2 * dK)
+            gamma = r
+
+            left = alpha + beta
+            center = -2 * alpha + gamma
+            right = alpha - beta
+
+            A[i, i-1] = -0.5 * dT * left
+            A[i, i] = 1 - 0.5 * dT * center
+            A[i, i+1] = -0.5 * dT * right
+
+            B[i, i-1] = 0.5 * dT * left
+            B[i, i] = 1 + 0.5 * dT * center
+            B[i, i+1] = 0.5 * dT * right
+
+        # Граничные условия для call: C(T,0)=S0, C(T,K_max)->0
         A[0, 0] = 1
         B[0, 0] = 1
-        C[m+1, 0] = 0  # Call: при K=0, цена = 0
+        C[m+1, 0] = S0
 
         A[N-1, N-1] = 1
         B[N-1, N-1] = 1
-        C[m+1, N-1] = K_max - S0 * np.exp(-r * T[m+1])  # При большом K
-        
+        C[m+1, N-1] = 0.0
+
         # Правая часть системы
         rhs = B @ C[m, :]
-        
-        # Решение системы уравнений
+
+        # Решение системы уравнений только по внутренним узлам
         C[m+1, 1:N-1] = la.solve(A[1:N-1, 1:N-1], rhs[1:N-1])
     
     return K, T, C
@@ -290,11 +293,11 @@ def build_dupire_surface_cn(data, S_t, r, sigma, tau):
             1D массив времен экспирации
     """
     # Параметры для численного решения
-    K_min = S_t * 0.5
-    K_max = S_t * 1.5
+    K_min = S_t * 0.6
+    K_max = S_t * 1.4
     T_max = 1.0
-    N = 100  # шаги по страйку
-    M = 100  # шаги по времени
+    N = 140  # шаги по страйку (более плотная сетка)
+    M = 140  # шаги по времени
 
     print("Решение уравнения Дюпира методом Кранка-Николсона...")
 
@@ -339,31 +342,31 @@ def calculate_dupire_volatility_improved(K_grid, T_grid, C_grid, r):
     - Более устойчива к численным ошибкам по сравнению с базовой версией
     - Автоматически определяет шаги сетки dT и dK
     """
-    local_vol_grid = np.zeros_like(C_grid)
-    M, N = C_grid.shape
+    C_smooth = gaussian_filter(C_grid, sigma=1.0)
+    local_vol_grid = np.full_like(C_grid, np.nan)
+    M, N = C_smooth.shape
 
     dT = T_grid[1, 0] - T_grid[0, 0] if M > 1 else 0.1
     dK = K_grid[0, 1] - K_grid[0, 0]
 
-    for i in range(1, M-1):
-        for j in range(1, N-1):
+    # Пропускаем два крайних слоя, чтобы производные были устойчивее
+    for i in range(2, M-2):
+        for j in range(2, N-2):
             K_val = K_grid[i, j]
 
-            # Численные производные с центральными разностями
-            dC_dT = (C_grid[i+1, j] - C_grid[i-1, j]) / (2 * dT)
-            dC_dK = (C_grid[i, j+1] - C_grid[i, j-1]) / (2 * dK)
-            d2C_dK2 = (C_grid[i, j+1] - 2*C_grid[i, j] + C_grid[i, j-1]) / (dK**2)
+            dC_dT = (C_smooth[i+1, j] - C_smooth[i-1, j]) / (2 * dT)
+            dC_dK = (C_smooth[i, j+1] - C_smooth[i, j-1]) / (2 * dK)
+            d2C_dK2 = (C_smooth[i, j+1] - 2*C_smooth[i, j] + C_smooth[i, j-1]) / (dK**2)
 
-            # Формула Дюпира
-            if d2C_dK2 > 1e-10:  # избегаем деления на 0
+            if d2C_dK2 > 1e-8:
                 numerator = 2 * (dC_dT + r * K_val * dC_dK)
                 denominator = (K_val**2) * d2C_dK2
-
                 if numerator > 0 and denominator > 0:
                     local_vol_grid[i, j] = np.sqrt(numerator / denominator)
-                else:
-                    local_vol_grid[i, j] = np.nan
-            else:
-                local_vol_grid[i, j] = np.nan
+
+    finite_vals = local_vol_grid[np.isfinite(local_vol_grid)]
+    if finite_vals.size:
+        cap = 3.0 * np.nanmedian(finite_vals)
+        local_vol_grid = np.clip(local_vol_grid, 0, cap)
 
     return local_vol_grid

@@ -1,6 +1,6 @@
 from crank_nicolson_dupire import *
 from dupire import *
-from inverse_dupire import *
+from inverse_calibration import demo_inverse_problem
 
 if __name__ == "__main__":
     # Конфигурация
@@ -80,17 +80,8 @@ if __name__ == "__main__":
     print(f"Диапазон времени: {T_grid_cn[0, 0]:.2f} - {T_grid_cn[-1, 0]:.2f} лет")
     print(f"Средняя локальная волатильность: {np.nanmean(local_vol_surface_cn):.4f}")
 
+    # 6. Демонстрация обратной задачи (калибровка локальной волатильности)
     print("\n" + "="*60)
-    print("ОБРАТНАЯ ЗАДАЧА ДЮПИРА (КАЛИБРОВКА)")
+    print("ОБРАТНАЯ ЗАДАЧА (ДЕМО)")
     print("="*60)
-
-    # 1. Аппроксимация локальной волатильности из рыночных цен
-    sigma_lv = invert_dupire(K_grid[0], T_grid[:, 0], C_grid, r)
-
-    print(f"Средняя локальная волатильность (обратная задача): {np.nanmean(sigma_lv):.4f}")
-
-    # 2. Решение PDE Дюпира с найденной σ(K,T)
-    C_pde = solve_forward_dupire(K_grid[0], T_grid[:, 0], sigma_lv, r, S_t)
-
-    # 3. Визуализация
-    plot_dupire_surface(K_grid, T_grid, sigma_lv)
+    demo_inverse_problem()

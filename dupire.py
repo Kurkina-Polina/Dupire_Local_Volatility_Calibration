@@ -1,4 +1,5 @@
 from black_scholes import *
+from scipy.ndimage import gaussian_filter
 def build_dupire_surface(S_t, r, sigma):
     """
      Строит поверхность цен опционов C(K,T) для формулы Дюпира:
@@ -27,8 +28,8 @@ def build_dupire_surface(S_t, r, sigma):
      """
 
     # Сетка для Дюпира: разные страйки K и времена T
-    K_range = np.linspace(S_t * 0.5, S_t * 1.5, 50)  # Страйки от 50% до 150% от спота
-    T_range =  np.linspace(0.1, 1.0, 30)
+    K_range = np.linspace(S_t * 0.6, S_t * 1.4, 80)  # уже и плотнее, меньше шум в производных
+    T_range =  np.linspace(0.1, 1.0, 60)
     # Создание координатных сеток для построения поверхности.
     K_grid, T_grid = np.meshgrid(K_range, T_range)
     C_grid = np.zeros_like(K_grid)
@@ -68,25 +69,31 @@ def calculate_dupire_volatility(K_grid, T_grid, C_grid, r):
     - Возвращает NaN для некорректных значений (отрицательные знаменатели)
     - Упрощенная версия без учета дивидендов
     """
-    local_vol_grid = np.zeros_like(C_grid)
+    # Лёгкое сглаживание поверхности, чтобы производные не взрывались
+    C_smooth = gaussian_filter(C_grid, sigma=1.0)
+    local_vol_grid = np.full_like(C_grid, np.nan)
 
-    for i in range(1, len(T_grid)-1):  # Избегаем границы по времени
-        for j in range(1, len(K_grid[0])-1):  # Избегаем границы по страйкам
+    # Избегаем двух крайних слоёв для устойчивых разностей
+    for i in range(2, T_grid.shape[0]-2):
+        for j in range(2, K_grid.shape[1]-2):
+            dT = T_grid[i+1, j] - T_grid[i-1, j]
+            dK = K_grid[i, j+1] - K_grid[i, j-1]
 
-            # Численные производные
-            dC_dT = (C_grid[i+1, j] - C_grid[i-1, j]) / (T_grid[i+1, j] - T_grid[i-1, j])
-            dC_dK = (C_grid[i, j+1] - C_grid[i, j-1]) / (K_grid[i, j+1] - K_grid[i, j-1])
-            d2C_dK2 = (C_grid[i, j+1] - 2*C_grid[i, j] + C_grid[i, j-1]) / ((K_grid[i, j+1] - K_grid[i, j])**2)
+            dC_dT = (C_smooth[i+1, j] - C_smooth[i-1, j]) / dT
+            dC_dK = (C_smooth[i, j+1] - C_smooth[i, j-1]) / dK
+            d2C_dK2 = (C_smooth[i, j+1] - 2*C_smooth[i, j] + C_smooth[i, j-1]) / (dK**2)
 
-            # Формула Дюпира (упрощенная, без дивидендов)
-            numerator = 2 * (dC_dT + r * K_grid[i,j] * dC_dK)
-            denominator = (K_grid[i,j]**2) * d2C_dK2
+            if d2C_dK2 > 1e-8:
+                numerator = 2 * (dC_dT + r * K_grid[i, j] * dC_dK)
+                denominator = (K_grid[i, j]**2) * d2C_dK2
+                if numerator > 0 and denominator > 0:
+                    local_vol_grid[i, j] = np.sqrt(numerator / denominator)
 
-            # Проверка на корректность
-            if denominator > 0 and numerator > 0:
-                local_vol_grid[i,j] = np.sqrt(numerator / denominator)
-            else:
-                local_vol_grid[i,j] = np.nan
+    # Ограничиваем выбросы разумным пределом: 3×медианная вола
+    finite_vals = local_vol_grid[np.isfinite(local_vol_grid)]
+    if finite_vals.size:
+        cap = 3.0 * np.nanmedian(finite_vals)
+        local_vol_grid = np.clip(local_vol_grid, 0, cap)
 
     return local_vol_grid
 
