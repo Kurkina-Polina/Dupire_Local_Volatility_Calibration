@@ -281,6 +281,50 @@ def inverse_problem(S0, K_min=60.0, K_max=140.0, r=0.03, sigma_true = 0.20, sigm
     plt.tight_layout()
     plt.savefig("inverse_demo_sigma.png", dpi=120)
     plt.close(fig)
-
     print("  plot saved to inverse_demo_sigma.png")
+
+    return sigma_calibrated
+
+def plot_3d_price_comparison(K_array, T_array, C1, C2, label1="C_cn", label2="C_calibrated"):
+    """
+    Сравнение двух поверхностей цен опционов в 3D.
+
+    Параметры:
+        K_array : (N,) — страйки
+        T_array : (M,) — времена до экспирации
+        C1, C2 : (M, N) — сетки цен
+        label1, label2 : подписи для легенды
+    """
+    K_grid, T_grid = np.meshgrid(K_array, T_array)  # (M, N)
+
+    fig = plt.figure(figsize=(12, 6))
+
+    # Первый подграфик: обе поверхности
+    ax1 = fig.add_subplot(121, projection='3d')
+    # Первая поверхность — синяя, полупрозрачная
+    ax1.plot_surface(K_grid, T_grid, C1,
+                    color='blue', alpha=0.6, edgecolor='none', label=label1)
+
+    # Вторая поверхность — оранжевая, тоже полупрозрачная
+    ax1.plot_surface(K_grid, T_grid, C2,
+                    color='orange', alpha=0.6, edgecolor='none', label=label2)
+
+    ax1.set_xlabel('Strike K')
+    ax1.set_ylabel('Time T')
+    ax1.set_zlabel('Call Price C')
+    ax1.set_title('Сравнение двух поверхностей цен (3D)')
+
+    # Второй подграфик: разность
+    ax2 = fig.add_subplot(122, projection='3d')
+    diff = C2 - C1
+    surf = ax2.plot_surface(K_grid, T_grid, diff, cmap='RdBu', edgecolor='none')
+    ax2.set_xlabel('Strike K')
+    ax2.set_ylabel('Time T')
+    ax2.set_zlabel('ΔC = C_cal - C_cn')
+    ax2.set_title('Разность цен (3D)')
+    fig.colorbar(surf, ax=ax2, shrink=0.5, aspect=10)
+
+    plt.tight_layout()
+    plt.savefig("3d_price_comparison.png", dpi=150)
+    plt.show()
 

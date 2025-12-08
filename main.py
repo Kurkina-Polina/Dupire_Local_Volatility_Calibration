@@ -84,9 +84,9 @@ if __name__ == "__main__":
     print("\n" + "="*60)
     print("ОБРАТНАЯ ЗАДАЧА")
     print("="*60)
-    #FIXME N=100, M=60 сделать аргументами и возможно это те же самые что и в build_dupire_surface_cn
-    #FIXME sigma_true is local_vol_surface_cn ???
-    inverse_problem(
+    #FIXME sigma_true is local_vol_surface_cn ??? надо в local_vol_surface_cn сделать обработку NaN
+
+    sigma_calibrated = inverse_problem(
         S0=S_t,
         K_min=min(K_array),
         K_max=max(K_array),
@@ -96,6 +96,23 @@ if __name__ == "__main__":
         N=N,
         M=M,
     )
-    #FIXME нарисовать график сравнения колл опционов с локальной волатильностью и с из обр задачи (вроде по блжку считаем обе)
-    # кажется что графики строит plot_dupire_cn_solution или build_dupire_surface_cn? и то и другое походу надо
+    _, _, C_calibrated = solve_dupire_pde(
+        S0=S_t,
+        r=r,
+        initial_vol=np.nanmean(sigma_calibrated),
+        K_min=min(K_array),
+        K_max=max(K_array),
+        T_max=max(T_array),
+        N=N,
+        M=M,
+        sigma_grid=sigma_calibrated
+    )
+
+    plot_3d_price_comparison(
+        K_array, T_array,
+        C_grid_cn,
+        C_calibrated,
+        label1="C (const σ)",
+        label2="C (calibrated σ)"
+    )
 
