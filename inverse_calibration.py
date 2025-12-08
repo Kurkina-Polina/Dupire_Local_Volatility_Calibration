@@ -82,15 +82,10 @@ def calibrate_local_vol(market_prices, K_full, T_full, K_nodes, T_nodes, sigma_i
     return sigma_calibrated, res
 
 
-def demo_inverse_problem():
+def demo_inverse_problem(S0, K_min=60.0, K_max=140.0, r=0.03, sigma_true = 0.20, sigma_init = 0.12, N=100, M=60):
     """Toy inverse problem on synthetic data (constant true vol)."""
-    S0 = 100.0
-    r = 0.03
-    sigma_true = 0.20
-    K_min, K_max = 60.0, 140.0
     T_max = 1.0
-    N, M = 100, 60  # More refined PDE grid for accuracy
-
+ #FIXME: what K we need to use
     K_full = np.linspace(K_min, K_max, N)
     T_full = np.linspace(0.01, T_max, M)
 
@@ -118,7 +113,7 @@ def demo_inverse_problem():
     T_nodes = np.linspace(0.01, T_max, 8)
     print(f"  Parameter grid: {len(K_nodes)} K-nodes × {len(T_nodes)} T-nodes")
 
-    sigma_init = 0.12
+
     print(f"  Initial guess: sigma={sigma_init}")
     print("  Starting calibration with adaptive regularization...")
     

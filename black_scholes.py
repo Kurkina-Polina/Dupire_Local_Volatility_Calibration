@@ -48,7 +48,7 @@ def get_option_parameters(ticker, start_date, end_date):
     S_t = float(data['Close'].iloc[-1])
 
     # 3. Сигма - волатильность (историческая, 30-дневная)
-    #сигма is the standard deviation of the stock's returns. This is the square root of the quadratic
+    # сигма is the standard deviation of the stock's returns. This is the square root of the quadratic
     # variation of the stock's log price process, a measure of its volatility.
 
     # Логарифмическая доходность на основе цен закрытия shift(1) сдвигает данные на одну строку назад
