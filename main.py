@@ -1,6 +1,6 @@
 from crank_nicolson_dupire import *
 from dupire import *
-from inverse_calibration import demo_inverse_problem
+from inverse_calibration import inverse_problem
 
 if __name__ == "__main__":
     # Конфигурация
@@ -82,6 +82,29 @@ if __name__ == "__main__":
 
     # 6. Демонстрация обратной задачи (калибровка локальной волатильности)
     print("\n" + "="*60)
-    print("ОБРАТНАЯ ЗАДАЧА (ДЕМО)")
+    print("ОБРАТНАЯ ЗАДАЧА")
     print("="*60)
-    demo_inverse_problem()
+
+    # Определение узловых сеток (более разреженных, чем рыночные данные)
+    # Для примера зададим фиксированное количество узлов
+    N, M = 100, 60  # Размерность PDE сетки (страйки × времена) (примерно)
+
+    K_nodes = np.linspace(K_grid_cn.min(), K_grid_cn.max(), N)
+    T_nodes = np.linspace(T_grid_cn.min(), T_grid_cn.max(), M)
+
+
+    sigma_calibrated, res = inverse_problem(
+        K_full=K_nodes,                  # полная сетка страйков
+        T_full=T_nodes,                  # полная сетка времен
+        S0=S_t,                    # текущая цена актива
+        r=r,                       # безрисковая ставка
+        K_nodes=K_nodes,           # узловая сетка страйков
+        T_nodes=T_nodes,           # узловая сетка времен
+        K_min=K_grid_cn.min(),
+        K_max=K_grid_cn.max(),
+        sigma_init=sigma,          # начальное предположение
+        N=N,
+        M=M,
+        stock=data,
+        evaluation_date=END_DATE,
+    )
