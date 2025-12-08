@@ -293,6 +293,8 @@ def compare_with_black_scholes(S0, K_bs, T_bs, r, sigma, C_dupire, K_dupire, T_d
     return C_bs, C_dupire_val
 
 def build_dupire_surface_cn(data, S_t, r, sigma, tau):
+    #FIXME: del data and tau and from comment
+    #FIXME сделать сохранение 2д графиков в файлы, изменить названия figure1 на название метода по которому получен график
     """
    Строит поверхность цен опционов методом Крэнка-Николсона для уравнения Дюпира:
     Решает PDE уравнения Дюпира численным методом для получения цен C(K,T)
@@ -321,6 +323,7 @@ def build_dupire_surface_cn(data, S_t, r, sigma, tau):
         T : ndarray
             1D массив времен экспирации
     """
+    #FIXME why?
     # Параметры для численного решения
     K_min = S_t * 0.6
     K_max = S_t * 1.4

@@ -44,7 +44,6 @@ if __name__ == "__main__":
     
     # 1. Классический подход: строим поверхность цен C(K,T) через Блэка-Шоулза
     K_grid, T_grid, C_grid = build_dupire_surface(S_t, r, sigma)
-#FIXME what diff between local_vol_surface and local_vol_surface_cn
     # 2. Вычисляем локальную волатильность по формуле Дюпира
     local_vol_surface = calculate_dupire_volatility(K_grid, T_grid, C_grid, r)
 
@@ -58,7 +57,6 @@ if __name__ == "__main__":
     print("\n" + "="*60)
     print("МЕТОД КРАНКА-НИКОЛСОНА ДЛЯ УРАВНЕНИЯ ДЮПИРА")
     print("="*60)
-    #FIXME what K we need to use
     # 1. Решаем уравнение Дюпира численно методом Кранка-Николсона
     K_grid_cn, T_grid_cn, C_grid_cn, K_array, T_array = build_dupire_surface_cn(data, S_t, r, sigma, tau)
     
@@ -82,15 +80,17 @@ if __name__ == "__main__":
 
     # 6. Демонстрация обратной задачи (калибровка локальной волатильности)
     print("\n" + "="*60)
-    print("ОБРАТНАЯ ЗАДАЧА (ДЕМО)")
+    print("ОБРАТНАЯ ЗАДАЧА")
     print("="*60)
-    # K_grid, T_grid, C_grid
+    #FIXME N=100, M=60 сделать аргументами и возможно это те же самые что и в build_dupire_surface_cn
     inverse_problem(
         S0=S_t,
-        K_grid,
-        T_grid,
+        K_min=min(K_array),
+        K_max=max(K_array),
         r=r,
         sigma_true = sigma,
         sigma_init = 0.12,
     )
     #FIXME нарисовать график сравнения колл опционов с локальной волатильностью и с из обр задачи (вроде по блжку считаем обе)
+    # кажется что графики строит plot_dupire_cn_solution или build_dupire_surface_cn?
+
