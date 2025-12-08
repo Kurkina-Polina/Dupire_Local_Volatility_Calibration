@@ -85,7 +85,7 @@ if __name__ == "__main__":
     print("ОБРАТНАЯ ЗАДАЧА")
     print("="*60)
     # 1. Получаем реальные цены опционов на конечную дату
-    evaluation_date = END_DATE  # Смотрим на рынок 1 июня 2017
+    evaluation_date = '2025-12-08'
 
     option_data, current_price = get_option_prices_simple(
         ticker=TICKER,

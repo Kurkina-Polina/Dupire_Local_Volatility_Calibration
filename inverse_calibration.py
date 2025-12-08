@@ -119,11 +119,11 @@ def get_option_prices_simple(ticker, evaluation_date, max_expirations=3):
     for expiry in expirations[:max_expirations]:
 
         # Преобразуем даты
-        expiry_date = datetime.strptime(expiry, '%Y-%m-%d')
-        current_date = datetime.strptime(evaluation_date, '%Y-%m-%d')
 
-        # Время до экспирации в годах
-        T_days = (expiry_date - current_date).days
+        current_date = datetime.strptime(evaluation_date, '%Y-%m-%d').date()  # Только дата
+        expiry_date = datetime.strptime(expiry, '%Y-%m-%d').date()
+
+        T_days = max(0, (expiry_date - current_date).days)  # Защита от отрицательных значений
         T_years = T_days / 365.0
 
 
