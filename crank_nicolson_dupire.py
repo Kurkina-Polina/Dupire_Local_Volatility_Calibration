@@ -292,7 +292,7 @@ def compare_with_black_scholes(S0, K_bs, T_bs, r, sigma, C_dupire, K_dupire, T_d
     
     return C_bs, C_dupire_val
 
-def build_dupire_surface_cn(data, S_t, r, sigma, tau):
+def build_dupire_surface_cn(S_t, r, sigma, N=140, M=140):
     #FIXME: del data and tau and from comment
     #FIXME сделать сохранение 2д графиков в файлы, изменить названия figure1 на название метода по которому получен график
     """
@@ -323,13 +323,10 @@ def build_dupire_surface_cn(data, S_t, r, sigma, tau):
         T : ndarray
             1D массив времен экспирации
     """
-    #FIXME why?
     # Параметры для численного решения
     K_min = S_t * 0.6
     K_max = S_t * 1.4
     T_max = 1.0
-    N = 140  # шаги по страйку (более плотная сетка)
-    M = 140  # шаги по времени
 
     print("Решение уравнения Дюпира методом Кранка-Николсона...")
 

@@ -41,7 +41,9 @@ if __name__ == "__main__":
     print("\n" + "="*60)
     print("КЛАССИЧЕСКИЙ ПОДХОД ДЮПИРА")
     print("="*60)
-    
+
+    N = 140  # шаги по страйку
+    M = 140  # шаги по времени
     # 1. Классический подход: строим поверхность цен C(K,T) через Блэка-Шоулза
     K_grid, T_grid, C_grid = build_dupire_surface(S_t, r, sigma)
     # 2. Вычисляем локальную волатильность по формуле Дюпира
@@ -58,7 +60,7 @@ if __name__ == "__main__":
     print("МЕТОД КРАНКА-НИКОЛСОНА ДЛЯ УРАВНЕНИЯ ДЮПИРА")
     print("="*60)
     # 1. Решаем уравнение Дюпира численно методом Кранка-Николсона
-    K_grid_cn, T_grid_cn, C_grid_cn, K_array, T_array = build_dupire_surface_cn(data, S_t, r, sigma, tau)
+    K_grid_cn, T_grid_cn, C_grid_cn, K_array, T_array = build_dupire_surface_cn(S_t, r, sigma, N, M)
     
     # 2. Вычисляем локальную волатильность из численного решения
     local_vol_surface_cn = calculate_dupire_volatility_improved(K_grid_cn, T_grid_cn, C_grid_cn, r)
@@ -83,6 +85,7 @@ if __name__ == "__main__":
     print("ОБРАТНАЯ ЗАДАЧА")
     print("="*60)
     #FIXME N=100, M=60 сделать аргументами и возможно это те же самые что и в build_dupire_surface_cn
+    #FIXME sigma_true is local_vol_surface_cn ???
     inverse_problem(
         S0=S_t,
         K_min=min(K_array),
@@ -90,7 +93,9 @@ if __name__ == "__main__":
         r=r,
         sigma_true = sigma,
         sigma_init = 0.12,
+        N=N,
+        M=M,
     )
     #FIXME нарисовать график сравнения колл опционов с локальной волатильностью и с из обр задачи (вроде по блжку считаем обе)
-    # кажется что графики строит plot_dupire_cn_solution или build_dupire_surface_cn?
+    # кажется что графики строит plot_dupire_cn_solution или build_dupire_surface_cn? и то и другое походу надо
 

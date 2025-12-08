@@ -202,7 +202,7 @@ def calibrate_local_vol(market_prices, K_full, T_full, K_nodes, T_nodes, sigma_i
 
 def inverse_problem(S0, K_min=60.0, K_max=140.0, r=0.03, sigma_true = 0.20, sigma_init = 0.12, N=100, M=60, T_max = 1.0):
     """Toy inverse problem on synthetic data (constant true vol)."""
-    # Полный набор цен исполнения (strikes) / dhtvtyb lj , на которых решается дифференциальное уравнение
+    # Полный набор цен исполнения (strikes) / времени до экспирации, на которых решается дифференциальное уравнение
     K_full = np.linspace(K_min, K_max, N)
     T_full = np.linspace(0.01, T_max, M)
 
@@ -213,7 +213,6 @@ def inverse_problem(S0, K_min=60.0, K_max=140.0, r=0.03, sigma_true = 0.20, sigm
     # Forward prices with true sigma
     print("  Generating synthetic market prices...")
     sigma_true_grid = np.full((M, N), sigma_true)
-    #FIXME why _ _ is not K and T
     _, _, market_prices = solve_dupire_pde(
         S0=S0,
         r=r,
