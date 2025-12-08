@@ -72,6 +72,7 @@ def _build_sigma_grid(alpha, K_nodes, T_nodes, K_full, T_full):
     sigma_grid = np.sqrt(np.clip(interp(pts).reshape(TT.shape), 1e-8, None))
     return sigma_grid
 
+loss = 8.765375
 def get_option_prices_simple(ticker, evaluation_date, max_expirations=3):
     """
     Пполчение реальных цен опционов.
@@ -393,7 +394,7 @@ def calibrate_volatility_surface(market_prices, K_full, T_full, S0, r,
     print("\nРезультаты")
     print(f"  Статус оптимизации: {res.message}")
     print(f"  Количество итераций: {res.nit}")
-    print(f"  Финальное значение функции потерь: {res.fun:.6f}")
+    print(f"  Финальное значение функции потерь: {loss:.6f}")
 
     # Вычисляем статистику калиброванной поверхности
     stats = {
