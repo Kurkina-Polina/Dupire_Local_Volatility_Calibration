@@ -7,7 +7,33 @@ from crank_nicolson_dupire import solve_dupire_pde
 
 
 def _laplacian_penalty(alpha_grid):
-    """Discrete Laplacian-based smoothness penalty for variance nodes."""
+    """
+    Вычисляет штраф за гладкость на основе дискретного лапласиана для сетки значений дисперсии.
+
+    Реализует регуляризационный штраф, основанный на аппроксимации лапласиана второго порядка,
+    который измеряет локальные изменения значений на сетке. Штраф вычисляется как сумма
+    квадратов разностей между центральной точкой и её четырьмя ближайшими соседями
+    (по вертикали и горизонтали).
+
+    Формула: penalty = Σ [ (α(i,j) - α(i-1,j))² + (α(i,j) - α(i+1,j))² +
+                         (α(i,j) - α(i,j-1))² + (α(i,j) - α(i,j+1))² ] / ((m-2)*(n-2))
+
+    Параметры:
+    alpha_grid : ndarray, shape (m, n)
+        2D сетка значений дисперсии или волатильности в логарифмической шкале.
+        Обычно представляет собой логарифмы узлов локальной волатильности.
+
+    Возвращает:
+    float
+        Нормализованное значение штрафа за гладкость. Усредняется по всем внутренним точкам
+        для независимости от размера сетки.
+
+    Особенности:
+    ------------
+    - Обрабатывает только внутренние точки сетки (исключает границы)
+    - Вычисляет лапласиан через разности первого порядка (аппроксимация градиента)
+    """
+
     pen = 0.0
     m, n = alpha_grid.shape
     for i in range(1, m - 1):
@@ -21,7 +47,43 @@ def _laplacian_penalty(alpha_grid):
 
 
 def _build_sigma_grid(alpha, K_nodes, T_nodes, K_full, T_full):
-    """Bilinear interpolation from coarse variance nodes to PDE grid."""
+    """
+    Построение сетки волатильности методом билинейной интерполяции из разреженных узлов дисперсии.
+
+    Преобразует вектор параметров дисперсии в логарифмической шкале в полную 2D сетку
+    локальных волатильностей через билинейную интерполяцию на регулярной сетке.
+    Процесс включает:
+    1. Преобразование вектора параметров в 2D сетку узлов дисперсии
+    2. Интерполяцию логарифмов дисперсии на полную сетку методом RegularGridInterpolator
+    3. Преобразование обратно в волатильность через взятие квадратного корня
+    4. Ограничение минимального значения для избежания численной нестабильности
+
+    Параметры:
+    alpha : ndarray, shape (len(T_nodes)*len(K_nodes),)
+        Вектор параметров в логарифмической шкале, представляющий значения дисперсии
+        в узлах (T_nodes, K_nodes). Упорядочен как [α(T0,K0), α(T0,K1), ..., α(T1,K0), ...]
+    K_nodes : ndarray, shape (M,)
+        Разреженная сетка цен исполнения (страйков) для узлов дисперсии
+    T_nodes : ndarray, shape (N,)
+        Разреженная сетка времен до экспирации для узлов дисперсии
+    K_full : ndarray, shape (P,)
+        Полная плотная сетка цен исполнения для решателя PDE
+    T_full : ndarray, shape (Q,)
+        Полная плотная сетка времен до экспирации для решателя PDE
+
+    Возвращает:
+    sigma_grid : ndarray, shape (Q, P)
+        2D сетка локальных волатильностей на полной сетке (T_full × K_full)
+
+    Особенности:
+    ------------
+    - Использует билинейную интерполяцию для плавного перехода между узлами
+    - Применяет RegularGridInterpolator с bounds_error=False для экстраполяции за границами
+    - Интерполирует логарифмы дисперсии (α), что обеспечивает положительность результата
+    - Преобразует дисперсию в волатильность через σ = √exp(α)
+    - Ограничивает минимальное значение дисперсии 1e-8 для численной устойчивости
+    - Поддерживает экстраполяцию за границами узловой сетки
+    """
     alpha_grid = alpha.reshape(len(T_nodes), len(K_nodes))
     interp = RegularGridInterpolator((T_nodes, K_nodes), alpha_grid, bounds_error=False, fill_value=None)
     TT, KK = np.meshgrid(T_full, K_full, indexing="ij")
@@ -32,15 +94,51 @@ def _build_sigma_grid(alpha, K_nodes, T_nodes, K_full, T_full):
 
 def calibrate_local_vol(market_prices, K_full, T_full, K_nodes, T_nodes, sigma_init, r, S0, lam=1e-2, maxiter=50, verbose=True):
     """
-    Inverse problem: fit local volatility surface sigma(K,T) to market option prices.
-    - market_prices: ndarray [M_full, N_full] target CALL prices on K_full x T_full grid
-    - K_full, T_full: 1D arrays defining PDE grid used for pricing
-    - K_nodes, T_nodes: coarse grids for variance parameters
-    - sigma_init: initial guess (scalar) for volatility
-    - lam: Tikhonov weight on surface smoothness (Laplacian of variance)
-    - maxiter: optimizer iterations
-    Returns calibrated sigma_grid over full PDE grid.
+    Решение обратной задачи: калибровка поверхности локальной волатильности σ(K,T) по рыночным ценам опционов.
+
+    Оптимизационный алгоритм для восстановления поверхности локальной волатильности,
+    которая наилучшим образом воспроизводит рыночные цены опционов CALL. Использует:
+    1. Параметризацию через разреженную сетку узлов дисперсии
+    2. Решение прямого уравнения Дюпира для ценообразования
+    3. Тихоновскую регуляризацию для обеспечения гладкости поверхности
+    4. Метод L-BFGS-B для минимизации целевой функции с ограничениями
+
+    Параметры:
+    market_prices : ndarray, shape (M_full, N_full)
+        Матрица целевых цен опционов CALL на полной сетке K_full × T_full
+    K_full : ndarray, shape (N_full,)
+        Полная сетка цен исполнения, используемая в решателе PDE
+    T_full : ndarray, shape (M_full,)
+        Полная сетка времен до экспирации, используемая в решателе PDE
+    K_nodes : ndarray, shape (M_nodes,)
+        Разреженная сетка страйков для параметров дисперсии (M_nodes << N_full)
+    T_nodes : ndarray, shape (N_nodes,)
+        Разреженная сетка времен для параметров дисперсии (N_nodes << M_full)
+    sigma_init : float
+        Начальное предположение о волатильности (постоянная по всей поверхности)
+    r : float
+        Безрисковая процентная ставка
+    S0 : float
+        Текущая цена базового актива
+    lam : float, default=1e-2
+        Вес Тихоновской регуляризации, контролирующий гладкость поверхности
+    maxiter : int, default=50
+        Максимальное количество итераций оптимизатора
+    verbose : bool, default=True
+        Флаг вывода информации о процессе оптимизации
+
+    Возвращает:
+    sigma_calibrated : ndarray, shape (M_full, N_full)
+        Откалиброванная поверхность локальной волатильности на полной сетке PDE
+    res : OptimizeResult
+        Результат работы оптимизатора с информацией о сходимости и истории оптимизации
+
+    Особенности:
+    ------------
+    - Ограничивает волатильность диапазоном [0.01, 2.0] для численной устойчивости
+    - Использует L-BFGS-B с ограничениями на параметры для избежания нефизических значений
     """
+
     M_full, N_full = market_prices.shape
     alpha0 = np.full((len(T_nodes), len(K_nodes)), sigma_init**2)
     alpha0_vec = alpha0.ravel()
@@ -49,6 +147,25 @@ def calibrate_local_vol(market_prices, K_full, T_full, K_nodes, T_nodes, sigma_i
     best_loss = [float('inf')]
 
     def loss(alpha_vec):
+        """
+        Целевая функция для оптимизации поверхности локальной волатильности.
+
+        Вычисляет комбинированную функцию потерь, состоящую из двух компонентов:
+        1. Несогласие (misfit) - квадратичная ошибка между модельными и рыночными ценами опционов
+        2. Регуляризация (regularization) - штраф за негладкость поверхности дисперсии
+
+        Полная потеря: L(α) = MSE(C_model, C_market) + λ × Laplacian(exp(α))
+
+        Параметры:
+        alpha_vec : ndarray, shape (len(T_nodes)*len(K_nodes),)
+            Вектор параметров в логарифмической шкале, представляющий значения дисперсии
+            на разреженной сетке узлов (T_nodes, K_nodes)
+
+        Возвращает:
+        float
+            Общее значение функции потерь, включающее несогласие с рыночными данными
+            и штраф за негладкость поверхности
+        """
         iteration[0] += 1
         alpha_grid = alpha_vec.reshape(len(T_nodes), len(K_nodes))
         sigma_grid = _build_sigma_grid(alpha_vec, K_nodes, T_nodes, K_full, T_full)
@@ -72,7 +189,8 @@ def calibrate_local_vol(market_prices, K_full, T_full, K_nodes, T_nodes, sigma_i
         if total_loss < best_loss[0]:
             best_loss[0] = total_loss
             if verbose and iteration[0] % 2 == 0:
-                print(f"    Iter {iteration[0]:3d}: loss={total_loss:.6f}, misfit={misfit:.6f}, reg={reg:.6f}")
+                with open('Iterations_calibrate_local.txt', 'w') as f:
+                    f.write(f"    Iter {iteration[0]:3d}: loss={total_loss:.6f}, misfit={misfit:.6f}, reg={reg:.6f}\n")
         
         return total_loss
 
@@ -82,7 +200,7 @@ def calibrate_local_vol(market_prices, K_full, T_full, K_nodes, T_nodes, sigma_i
     return sigma_calibrated, res
 
 
-def demo_inverse_problem(S0, K_min=60.0, K_max=140.0, r=0.03, sigma_true = 0.20, sigma_init = 0.12, N=100, M=60):
+def inverse_problem(S0, K_min=60.0, K_max=140.0, r=0.03, sigma_true = 0.20, sigma_init = 0.12, N=100, M=60):
     """Toy inverse problem on synthetic data (constant true vol)."""
     T_max = 1.0
  #FIXME: what K we need to use

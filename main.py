@@ -1,6 +1,6 @@
 from crank_nicolson_dupire import *
 from dupire import *
-from inverse_calibration import demo_inverse_problem
+from inverse_calibration import *
 
 if __name__ == "__main__":
     # Конфигурация
@@ -85,7 +85,7 @@ if __name__ == "__main__":
     print("ОБРАТНАЯ ЗАДАЧА (ДЕМО)")
     print("="*60)
     # K_grid, T_grid, C_grid
-    demo_inverse_problem(
+    inverse_problem(
         S0=S_t,
         K_grid,
         T_grid,
