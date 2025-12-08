@@ -110,14 +110,12 @@ def get_option_prices_simple(ticker, evaluation_date, max_expirations=3):
 
     # 3. Получаем список доступных дат экспирации
     expirations = stock.options
-    print(f"Доступные экспирации: {expirations}")
 
     # 4. Создаем список для хранения данных
     all_data = []
 
     # 5. Обрабатываем каждую экспирацию (первые max_expirations)
     for expiry in expirations[:max_expirations]:
-        print(f"\nОбрабатываем экспирацию: {expiry}")
 
         # Преобразуем даты
         expiry_date = datetime.strptime(expiry, '%Y-%m-%d')
@@ -127,8 +125,6 @@ def get_option_prices_simple(ticker, evaluation_date, max_expirations=3):
         T_days = (expiry_date - current_date).days
         T_years = T_days / 365.0
 
-        print(f"  Дней до экспирации: {T_days}")
-        print(f"  Лет до экспирации: {T_years:.3f}")
 
         # Получаем цепочку опционов
         opt_chain = stock.option_chain(expiry)
@@ -136,7 +132,6 @@ def get_option_prices_simple(ticker, evaluation_date, max_expirations=3):
 
         # Проверяем, что есть данные
         if calls.empty:
-            print(f"  Нет данных CALL для {expiry}")
             continue
 
         # Добавляем вычисляемые поля
@@ -147,7 +142,6 @@ def get_option_prices_simple(ticker, evaluation_date, max_expirations=3):
         # Фильтруем: оставляем только опционы с ценой > 0
         calls_filtered = calls[calls['lastPrice'] > 0]
 
-        print(f"  Найдено {len(calls_filtered)} опционов CALL с ценой > 0")
 
         # Отбираем нужные колонки
         calls_selected = calls_filtered[['strike', 'T', 'lastPrice', 'volume']]
@@ -166,10 +160,6 @@ def get_option_prices_simple(ticker, evaluation_date, max_expirations=3):
 
     # 7. Сортируем и фильтруем
     all_calls = all_calls.sort_values(['T', 'K'])
-
-    print(f"\nИтого получено {len(all_calls)} опционов CALL")
-    print(f"Диапазон страйков: ${all_calls['K'].min():.2f} - ${all_calls['K'].max():.2f}")
-    print(f"Диапазон времён: {all_calls['T'].min():.3f} - {all_calls['T'].max():.3f} лет")
 
     return all_calls, S0
 
@@ -309,121 +299,6 @@ def calibrate_local_vol(market_prices, K_full, T_full, K_nodes, T_nodes, sigma_i
     return sigma_calibrated, res
 
 
-def inverse_problem(K_full, T_full, S0, r,
-                    K_nodes, T_nodes, K_min, K_max,
-                    sigma_init, N, M, stock, evaluation_date, T_max = 1.0):
-    """
-    Решение обратной задачи калибровки локальной волатильности.
-
-    Параметры:
-    ----------
-    K_full : ndarray
-        Полная сетка цен исполнения
-    T_full : ndarray
-        Полная сетка времен до экспирации
-    S0 : float
-        Текущая цена базового актива
-    r : float
-        Безрисковая процентная ставка
-    K_nodes : ndarray, optional
-        Разреженная сетка страйков для параметризации
-    T_nodes : ndarray, optional
-        Разреженная сетка времен для параметризации
-    K_min : float, default=60
-        Минимальный страйк
-    K_max : float, default=140
-        Максимальный страйк
-    sigma_init : float, default=0.2
-        Начальное предположение о волатильности
-    N : int, default=100
-        Количество точек по страйкам в PDE сетке
-    M : int, default=60
-        Количество точек по времени в PDE сетке
-
-    Возвращает:
-    -----------
-    sigma_calibrated : ndarray
-        Откалиброванная поверхность волатильности
-    res : OptimizeResult
-        Результат оптимизации
-    """
-    print(f"  Базовая цена актива (S0): {S0:.2f}")
-    print(f"  Безрисковая ставка (r): {r:.4f} ({r*100:.2f}%)")
-    print(f"  Начальное предположение (sigma_init): {sigma_init:.4f}")
-    print(f"  Диапазон страйков: {K_min:.1f} - {K_max:.1f}")
-    print(f"  Размерность PDE сетки: {N} страйков × {M} временных точек")
-    print(f"  Длина T_full: {len(T_full)} точек, диапазон: [{T_full.min():.3f}, {T_full.max():.3f}]")
-    print(f"  Длина K_full: {len(K_full)} точек, диапазон: [{K_full.min():.2f}, {K_full.max():.2f}]")
-
-    sigma_grid = np.full((M, N), sigma_init)
-    expirations = stock.options
-    try:
-        # Загружаем исторические данные для получения цены на нужную дату
-        hist = stock.history(start=evaluation_date, end=evaluation_date)
-        if len(hist) == 0:
-            # Если нет данных на точную дату, берем ближайшую предыдущую
-            hist = stock.history(period="5d", end=evaluation_date)
-        S0 = float(hist['Close'].iloc[-1])
-        print(f"Цена акции на {evaluation_date}: ${S0:.2f}")
-    except Exception as e:
-        print(f"Не удалось получить цену акции: {e}")
-        S0 = 100.0
-
-    # Собираем данные по опционам CALL для каждой экспирации
-    all_options_data = []
-
-    _, _, market_prices = solve_dupire_pde(
-        S0=S0,
-        r=r,
-        initial_vol=sigma_grid.mean(),
-        K_min=K_min,
-        K_max=K_max,
-        T_max=T_max,
-        N=N,
-        M=M,
-    )
-
-    sigma_calibrated, res = calibrate_local_vol(
-        market_prices=market_prices,
-        K_full=K_full,
-        T_full=T_full,
-        K_nodes=K_nodes,
-        T_nodes=T_nodes,
-        sigma_init=sigma_init,
-        r=r,
-        S0=S0,
-        lam=2e-3,  # Smaller regularization for better fit
-        maxiter=50,
-        verbose=True,
-    )
-
-    stats = {
-        "min": float(np.min(sigma_calibrated)),
-        "max": float(np.max(sigma_calibrated)),
-        "mean": float(np.mean(sigma_calibrated)),
-        "median": float(np.median(sigma_calibrated)),
-    }
-
-    print(f"\nКалибровка завершена!")
-
-    print(f"Статистика восстановленной волатильности:")
-    print(f"мин={stats['min']:.4f}, макс={stats['max']:.4f}")
-    print(f"среднее={stats['mean']:.4f}, медиана={stats['median']:.4f}")
-
-
-    # Визуализация: сохраняем heatmap оцененной волатильности
-    fig, ax = plt.subplots(figsize=(10, 4))
-    im1 = ax.imshow(sigma_calibrated, extent=[K_min, K_max, T_max, 0], aspect="auto", cmap="viridis")
-    ax.set_title("Calibrated sigma")
-    ax.set_xlabel("K")
-    ax.set_ylabel("T")
-    plt.colorbar(im1, ax=ax, fraction=0.046, pad=0.04)
-    plt.tight_layout()
-    plt.savefig("inverse_demo_sigma.png", dpi=120)
-    plt.close(fig)
-
-    print("График сохранен в  inverse_demo_sigma.png")
-    return sigma_calibrated, res
 
 def calibrate_volatility_surface(market_prices, K_full, T_full, S0, r,
                                  K_nodes=None, T_nodes=None,
@@ -468,9 +343,7 @@ def calibrate_volatility_surface(market_prices, K_full, T_full, S0, r,
     """
 
     # Вывод начальных параметров
-    print("="*60)
-    print("КАЛИБРОВКА ПОВЕРХНОСТИ ВОЛАТИЛЬНОСТИ")
-    print("="*60)
+    print("Начальные параметры")
     print(f"  Базовая цена актива (S0): {S0:.2f}")
     print(f"  Безрисковая ставка (r): {r:.4f} ({r*100:.2f}%)")
     print(f"  Начальное предположение (sigma_init): {sigma_init:.4f}")
@@ -500,10 +373,8 @@ def calibrate_volatility_surface(market_prices, K_full, T_full, S0, r,
 
     print(f"  Коэффициент регуляризации: {lam}")
     print(f"  Максимальное число итераций: {maxiter}")
-    print("-"*60)
 
     # Калибровка локальной волатильности
-    print("\nЗапуск калибровки...")
     sigma_calibrated, res = calibrate_local_vol(
         market_prices=market_prices_filled,  # Используем заполненные данные
         K_full=K_full,
@@ -519,9 +390,7 @@ def calibrate_volatility_surface(market_prices, K_full, T_full, S0, r,
     )
 
     # Статистика результатов
-    print("\n" + "="*60)
-    print("РЕЗУЛЬТАТЫ КАЛИБРОВКИ")
-    print("="*60)
+    print("\nРезультаты")
     print(f"  Статус оптимизации: {res.message}")
     print(f"  Количество итераций: {res.nit}")
     print(f"  Финальное значение функции потерь: {res.fun:.6f}")
