@@ -72,6 +72,147 @@ def _build_sigma_grid(alpha, K_nodes, T_nodes, K_full, T_full):
     sigma_grid = np.sqrt(np.clip(interp(pts).reshape(TT.shape), 1e-8, None))
     return sigma_grid
 
+def get_option_prices_simple(ticker, evaluation_date, max_expirations=3):
+    """
+    Пполчение реальных цен опционов.
+
+    Параметры:
+    ----------
+    ticker : str
+        Тикер акции (например, "SPY")
+    evaluation_date : str
+        Дата анализа в формате 'YYYY-MM-DD'
+    max_expirations : int
+        Сколько дат экспирации брать (обычно 3)
+
+    Возвращает:
+    -----------
+    all_calls : DataFrame
+        Данные опционов CALL
+    S0 : float
+        Цена акции на evaluation_date
+    """
+
+    import yfinance as yf
+    import pandas as pd
+    from datetime import datetime
+
+    print(f"Получаем опционы {ticker} на дату {evaluation_date}")
+
+    # 1. Создаем объект тикера
+    stock = yf.Ticker(ticker)
+
+    # 2. Получаем цену акции на evaluation_date
+    # Берем исторические данные за последние 5 дней от evaluation_date
+    hist = stock.history(period="5d", end=evaluation_date)
+    S0 = float(hist['Close'].iloc[-1])
+    print(f"Цена акции {ticker}: ${S0:.2f}")
+
+    # 3. Получаем список доступных дат экспирации
+    expirations = stock.options
+    print(f"Доступные экспирации: {expirations}")
+
+    # 4. Создаем список для хранения данных
+    all_data = []
+
+    # 5. Обрабатываем каждую экспирацию (первые max_expirations)
+    for expiry in expirations[:max_expirations]:
+        print(f"\nОбрабатываем экспирацию: {expiry}")
+
+        # Преобразуем даты
+        expiry_date = datetime.strptime(expiry, '%Y-%m-%d')
+        current_date = datetime.strptime(evaluation_date, '%Y-%m-%d')
+
+        # Время до экспирации в годах
+        T_days = (expiry_date - current_date).days
+        T_years = T_days / 365.0
+
+        print(f"  Дней до экспирации: {T_days}")
+        print(f"  Лет до экспирации: {T_years:.3f}")
+
+        # Получаем цепочку опционов
+        opt_chain = stock.option_chain(expiry)
+        calls = opt_chain.calls.copy()
+
+        # Проверяем, что есть данные
+        if calls.empty:
+            print(f"  Нет данных CALL для {expiry}")
+            continue
+
+        # Добавляем вычисляемые поля
+        calls['T'] = T_years
+        calls['expiry'] = expiry
+        calls['moneyness'] = calls['strike'] / S0
+
+        # Фильтруем: оставляем только опционы с ценой > 0
+        calls_filtered = calls[calls['lastPrice'] > 0]
+
+        print(f"  Найдено {len(calls_filtered)} опционов CALL с ценой > 0")
+
+        # Отбираем нужные колонки
+        calls_selected = calls_filtered[['strike', 'T', 'lastPrice', 'volume']]
+
+        # Переименовываем
+        calls_selected.columns = ['K', 'T', 'price', 'volume']
+
+        all_data.append(calls_selected)
+
+    # 6. Объединяем все данные
+    if not all_data:
+        print("Не удалось получить данные опционов!")
+        return None, S0
+
+    all_calls = pd.concat(all_data, ignore_index=True)
+
+    # 7. Сортируем и фильтруем
+    all_calls = all_calls.sort_values(['T', 'K'])
+
+    print(f"\nИтого получено {len(all_calls)} опционов CALL")
+    print(f"Диапазон страйков: ${all_calls['K'].min():.2f} - ${all_calls['K'].max():.2f}")
+    print(f"Диапазон времён: {all_calls['T'].min():.3f} - {all_calls['T'].max():.3f} лет")
+
+    return all_calls, S0
+
+
+def prepare_market_data_for_calibration(option_data, S0):
+    """
+    Преобразует DataFrame опционов в данные для калибровки.
+
+    Параметры:
+    ----------
+    option_data : DataFrame
+        Данные опционов из get_option_prices_simple()
+    S0 : float
+        Цена акции
+
+    Возвращает:
+    -----------
+    market_prices : ndarray
+        Матрица цен опционов
+    K_full : ndarray
+        Сетка страйков
+    T_full : ndarray
+        Сетка времён
+    """
+    import numpy as np
+
+    # Получаем уникальные значения страйков и времён
+    unique_K = np.sort(option_data['K'].unique())
+    unique_T = np.sort(option_data['T'].unique())
+
+    # Создаем матрицу цен
+    market_prices = np.full((len(unique_T), len(unique_K)), np.nan)
+
+    # Заполняем матрицу
+    for idx, row in option_data.iterrows():
+        t_idx = np.where(unique_T == row['T'])[0][0]
+        k_idx = np.where(unique_K == row['K'])[0][0]
+        market_prices[t_idx, k_idx] = row['price']
+
+    print(f"Создана матрица цен: {market_prices.shape[0]} времён × {market_prices.shape[1]} страйков")
+    print(f"Заполнено: {np.sum(~np.isnan(market_prices))} из {market_prices.size} ячеек")
+
+    return market_prices, unique_K, unique_T
 
 def calibrate_local_vol(market_prices, K_full, T_full, K_nodes, T_nodes, sigma_init, r, S0, lam=1e-2, maxiter=50, verbose=True):
     """
@@ -284,3 +425,148 @@ def inverse_problem(K_full, T_full, S0, r,
     print("График сохранен в  inverse_demo_sigma.png")
     return sigma_calibrated, res
 
+def calibrate_volatility_surface(market_prices, K_full, T_full, S0, r,
+                                 K_nodes=None, T_nodes=None,
+                                 sigma_init=0.20, lam=2e-3, maxiter=50,
+                                 plot_results=True, verbose=True):
+    """
+    Калибровка поверхности локальной волатильности по рыночным данным.
+
+    Параметры:
+    ----------
+    market_prices : ndarray, shape (M, N)
+        РЕАЛЬНЫЕ рыночные цены опционов CALL на сетке K_full × T_full
+    K_full : ndarray, shape (N,)
+        Сетка страйков из рыночных данных
+    T_full : ndarray, shape (M,)
+        Сетка времен до экспирации из рыночных данных (в годах)
+    S0 : float
+        Текущая цена базового актива
+    r : float
+        Безрисковая процентная ставка
+    K_nodes : ndarray, optional
+        Разреженная сетка страйков для параметризации
+    T_nodes : ndarray, optional
+        Разреженная сетка времен для параметризации
+    sigma_init : float, default=0.20
+        Начальное предположение о волатильности
+    lam : float, default=2e-3
+        Коэффициент регуляризации
+    maxiter : int, default=50
+        Максимальное число итераций
+    plot_results : bool, default=True
+        Сохранять ли визуализацию
+    verbose : bool, default=True
+        Выводить ли информацию о процессе
+
+    Возвращает:
+    -----------
+    sigma_calibrated : ndarray, shape (M, N)
+        Откалиброванная поверхность локальной волатильности
+    res : OptimizeResult
+        Результат оптимизации
+    """
+
+    # Вывод начальных параметров
+    print("="*60)
+    print("КАЛИБРОВКА ПОВЕРХНОСТИ ВОЛАТИЛЬНОСТИ")
+    print("="*60)
+    print(f"  Базовая цена актива (S0): {S0:.2f}")
+    print(f"  Безрисковая ставка (r): {r:.4f} ({r*100:.2f}%)")
+    print(f"  Начальное предположение (sigma_init): {sigma_init:.4f}")
+    print(f"  Размерность данных: {len(T_full)}×{len(K_full)} (T×K)")
+    print(f"  Диапазон страйков: [{K_full.min():.2f}, {K_full.max():.2f}]")
+    print(f"  Диапазон времён: [{T_full.min():.3f}, {T_full.max():.3f}] лет")
+
+    # Проверка наличия NaN в рыночных ценах
+    nan_count = np.sum(np.isnan(market_prices))
+    if nan_count > 0:
+        print(f"  Внимание: {nan_count} NaN значений в рыночных ценах")
+        # Заменяем NaN на 0 для численной устойчивости
+        market_prices_filled = np.nan_to_num(market_prices, nan=0.0)
+    else:
+        market_prices_filled = market_prices
+
+    print(f"  Диапазон цен: [{np.nanmin(market_prices):.2f}, {np.nanmax(market_prices):.2f}]")
+
+    # Автоматическое создание узловых сеток, если не заданы
+    if K_nodes is None:
+        K_nodes = np.linspace(K_full.min(), K_full.max(), 10)
+        print(f"  Создана узловая сетка по страйкам: {len(K_nodes)} точек")
+
+    if T_nodes is None:
+        T_nodes = np.linspace(T_full.min(), T_full.max(), 8)
+        print(f"  Создана узловая сетка по времени: {len(T_nodes)} точек")
+
+    print(f"  Коэффициент регуляризации: {lam}")
+    print(f"  Максимальное число итераций: {maxiter}")
+    print("-"*60)
+
+    # Калибровка локальной волатильности
+    print("\nЗапуск калибровки...")
+    sigma_calibrated, res = calibrate_local_vol(
+        market_prices=market_prices_filled,  # Используем заполненные данные
+        K_full=K_full,
+        T_full=T_full,
+        K_nodes=K_nodes,
+        T_nodes=T_nodes,
+        sigma_init=sigma_init,
+        r=r,
+        S0=S0,
+        lam=lam,
+        maxiter=maxiter,
+        verbose=verbose,
+    )
+
+    # Статистика результатов
+    print("\n" + "="*60)
+    print("РЕЗУЛЬТАТЫ КАЛИБРОВКИ")
+    print("="*60)
+    print(f"  Статус оптимизации: {res.message}")
+    print(f"  Количество итераций: {res.nit}")
+    print(f"  Финальное значение функции потерь: {res.fun:.6f}")
+
+    # Вычисляем статистику калиброванной поверхности
+    stats = {
+        "min": float(np.nanmin(sigma_calibrated)),
+        "max": float(np.nanmax(sigma_calibrated)),
+        "mean": float(np.nanmean(sigma_calibrated)),
+        "median": float(np.nanmedian(sigma_calibrated)),
+        "std": float(np.nanstd(sigma_calibrated)),
+    }
+
+    print(f"\n  Статистика поверхности волатильности:")
+    print(f"    Мин:    {stats['min']:.4f}")
+    print(f"    Макс:   {stats['max']:.4f}")
+    print(f"    Среднее: {stats['mean']:.4f}")
+    print(f"    Медиана: {stats['median']:.4f}")
+    print(f"    Стандартное отклонение: {stats['std']:.4f}")
+
+    # Оценка качества
+    print(f"\n  Оценка качества калибровки:")
+    print(f"    Средняя волатильность: {stats['mean']:.4f}")
+    print(f"    Размах (max-min): {stats['max'] - stats['min']:.4f}")
+
+
+    # Визуализация результатов
+    if plot_results:
+        plt.figure(figsize=(10, 6))
+
+        # Heatmap калиброванной волатильности
+        plt.imshow(sigma_calibrated,
+                   extent=[K_full.min(), K_full.max(), T_full.max(), T_full.min()],
+                   aspect="auto",
+                   cmap="viridis")
+
+        plt.title("Калиброванная волатильность")
+        plt.xlabel("Страйк (K)")
+        plt.ylabel("Время (T)")
+
+        plt.colorbar(label='Волатильность σ')
+
+        plt.tight_layout()
+        plt.savefig("calibrated_volatility_surface.png", dpi=120)
+        plt.close()
+        print("График сохранен в 'calibrated_volatility_surface.png'")
+
+    return sigma_calibrated, res
