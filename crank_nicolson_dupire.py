@@ -3,6 +3,7 @@ import scipy.linalg as la
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter
 from scipy.stats import norm
+from scipy.interpolate import RectBivariateSpline
 
 def solve_dupire_pde(S0, r, initial_vol, K_min, K_max, T_max, N, M, sigma_grid=None):
     """
@@ -398,4 +399,30 @@ def calculate_dupire_volatility_improved(K_grid, T_grid, C_grid, r):
         cap = 3.0 * np.nanmedian(finite_vals)
         local_vol_grid = np.clip(local_vol_grid, 0, cap)
 
-    return local_vol_grid
+    T_vals = T_grid[:, 0]
+    K_vals = K_grid[0, :]
+
+    valid_mask = ~np.isnan(local_vol_grid)
+    points_T = T_grid[valid_mask]
+    points_K = K_grid[valid_mask]
+    values = local_vol_grid[valid_mask]
+
+
+    values_smooth = gaussian_filter(values, sigma=1)
+
+    spline = RectBivariateSpline(
+        T_vals,
+        K_vals,
+        np.nan_to_num(local_vol_grid, nan=np.nanmedian(finite_vals)),
+        kx=3, ky=3
+    )
+
+    interpolated = spline(T_vals, K_vals)
+
+    filled = local_vol_grid.copy()
+    filled[np.isnan(filled)] = interpolated[np.isnan(filled)]
+
+    filled = gaussian_filter(filled, sigma=1.0)
+
+  
+    return filled
