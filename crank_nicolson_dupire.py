@@ -3,6 +3,7 @@ import scipy.linalg as la
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter
 from scipy.stats import norm
+from scipy.interpolate import RectBivariateSpline
 
 def solve_dupire_pde(S0, r, initial_vol, K_min, K_max, T_max, N, M, sigma_grid=None):
     """
@@ -98,10 +99,39 @@ def solve_dupire_pde(S0, r, initial_vol, K_min, K_max, T_max, N, M, sigma_grid=N
     
     return K, T, C
 
-def calibrate_dupire_volatility(market_prices, K, T, r, S0):
+def calibrate_dupire_volatility(market_prices, K, T, r):
     """
-    Калибровка локальной волатильности по формуле Дюпира
-    используя рыночные цены опционов
+    Калибровка локальной волатильности по формуле Дюпира с использованием рыночных цен опционов.
+
+    Реализует численное вычисление локальной волатильности на основе классической формулы Дюпира:
+    σ²(K,T) = [2·(∂C/∂T + rK·∂C/∂K)] / [K²·∂²C/∂K²]
+    где C - цена опциона CALL, K - страйк, T - время до экспирации, r - безрисковая ставка.
+
+    Параметры:
+    market_prices : ndarray, shape (M, N)
+        2D массив рыночных цен опционов CALL, где M - количество временных точек,
+        N - количество страйков
+    K : ndarray, shape (N,)
+        Массив цен исполнения (страйков)
+    T : ndarray, shape (M,)
+        Массив времен до экспирации (в годах)
+    r : float
+        Безрисковая процентная ставка (годовая)
+    S0 : float
+        Текущая цена базового актива (используется для проверок, но не в формуле Дюпира)
+
+    Возвращает:
+    local_vol : ndarray, shape (M, N)
+        2D массив локальных волатильностей, рассчитанных по формуле Дюпира.
+        Граничные точки заполнены нулями, внутренние точки с некорректными значениями - NaN.
+
+    Особенности:
+    ------------
+    - Использует центральные разности для вычисления производных первого и второго порядка
+    - Пропускает граничные точки (индексы 0 и M-1 по времени, 0 и N-1 по страйкам)
+    - Проверяет условие d2C_dK2 > 1e-8 для избежания численной нестабильности
+    - Автоматически определяет шаги dT и dK из входных массивов
+    - В случае нарушения условий устойчивости возвращает NaN
     """
     M, N = market_prices.shape
     local_vol = np.zeros((M, N))
@@ -130,80 +160,69 @@ def calibrate_dupire_volatility(market_prices, K, T, r, S0):
     
     return local_vol
 
-def plot_dupire_cn_solution(K, T, C, local_vol=None):
+def plot_dupire_cn_solution(K, T, C):
     """
-    Калибрует локальную волатильность по формуле Дюпира используя рыночные цены опционов.
+    Визуализирует результаты решения уравнения Дюпира методом Кранка-Николсона.
 
-    Формула Дюпира для локальной волатильности:
-    σ²(K,T) = [2·(∂C/∂T + rK·∂C/∂K)] / [K²·∂²C/∂K²]
-
-    Локальная волатильность показывает, какую волатильность должен иметь базовый актив,
-    чтобы теоретическая цена опциона совпадала с рыночной для каждого страйка и срока.
+    Строит три типа графиков для анализа цен опционов, полученных численным решением:
+    1. 3D поверхность цен в зависимости от страйка и времени "Dupire_CN_prices.png"
+    2. Профили цен (срезы) для фиксированных сроков экспирации "Dupire_CN_slices.png"
+    3. Эволюцию цен от начального до конечного момента времени "Dupire_CN_evolution.png"
 
     Параметры:
-    market_prices : ndarray
-        2D массив рыночных цен опционов CALL размером [M, N], где:
-        M - количество временных точек (сроков экспирации)
-        N - количество страйков
+    ----------
     K : ndarray
-        1D массив цен исполнения (страйков) длиной N
+        1D массив цен исполнения (страйков) длиной N, где N - количество страйков
+        Единицы измерения: денежные единицы (рубли, доллары и т.д.)
     T : ndarray
-        1D массив времен до экспирации (в годах) длиной M
-    r : float
-        Безрисковая процентная ставка (годовая, в десятичной форме)
-    S0 : float
-        Текущая цена базового актива
-
-     Возвращает:
-    local_vol : ndarray
-        2D массив локальных волатильностей размером [M, N]
-        Граничные точки заполнены NaN из-за невозможности вычисления производных
-
-    Особенности:
-    ------------
-    - Использует центральные разности для численного дифференцирования
-    - Граничные точки не вычисляются из-за отсутствия соседних точек для производных
+        1D массив времен до экспирации (в годах) длиной M, где M - количество временных точек
+        Упорядочен по возрастанию: от ближайшего срока к наиболее отдаленному
+    C : ndarray
+        2D массив цен опционов CALL размером [M, N], где:
+        C[i, j] - цена опциона с экспирацией в момент T[i] и страйком K[j]
+        Единицы измерения: денежные единицы
     """
+
     T_grid, K_grid = np.meshgrid(T, K)
-    
-    fig = plt.figure(figsize=(16, 10))
-    
+
     # 1. Поверхность цен опционов
-    ax1 = fig.add_subplot(2, 2, 1, projection='3d')
-    surf1 = ax1.plot_surface(K_grid, T_grid, C.T, cmap='viridis', alpha=0.8)
-    ax1.set_xlabel('Цена исполнения (K)')
-    ax1.set_ylabel('Время до экспирации (T)')
-    ax1.set_zlabel('Option Price')
-    ax1.set_title('Решение уравнения Дюпира\n(Метод Кранка-Николсона)')
-    plt.colorbar(surf1, ax=ax1, shrink=0.5)
-    
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    surf = ax.plot_surface(K_grid, T_grid, C.T, cmap='viridis', alpha=0.8)
+    ax.set_xlabel('Цена исполнения (K)')
+    ax.set_ylabel('Время до экспирации (T)')
+    ax.set_zlabel('Option Price')
+    ax.set_title('Dupire CN: Option Price Surface')
+    plt.colorbar(surf, ax=ax, shrink=0.5)
+    fig.savefig("Dupire_CN_prices.png", dpi=150)
+    plt.close(fig)
+
     # 2. Срезы по времени
-    ax2 = fig.add_subplot(2, 2, 2)
+    fig, ax = plt.subplots(figsize=(10, 6))
     time_indices = [int(0.1*len(T)), int(0.5*len(T)), int(0.9*len(T))]
     colors = ['red', 'blue', 'green']
-    
     for idx, color in zip(time_indices, colors):
-        ax2.plot(K, C[idx, :], color=color, 
-                label=f'T = {T[idx]:.2f}', linewidth=2)
-    
-    ax2.set_xlabel('Цена исполнения (K)')
-    ax2.set_ylabel('Option Price')
-    ax2.set_title('Срезы по времени')
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)
-    
-    # 4. Сравнение начальных и конечных выплат
-    ax4 = fig.add_subplot(2, 2, 4)
-    ax4.plot(K, C[0, :], 'k--', label='Начальное условие (T=0)', linewidth=2)
-    ax4.plot(K, C[-1, :], 'r-', label=f'Решение (T={T[-1]:.2f})', linewidth=2)
-    ax4.set_xlabel('Цена исполнения (K)')
-    ax4.set_ylabel('Option Price')
-    ax4.set_title('Эволюция цен во времени')
-    ax4.legend()
-    ax4.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.show()
+        ax.plot(K, C[idx, :], color=color, label=f'T = {T[idx]:.2f}', linewidth=2)
+    ax.set_xlabel('Цена исполнения (K)')
+    ax.set_ylabel('Option Price')
+    ax.set_title('Dupire CN: Slices over Time')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.savefig("Dupire_CN_slices.png", dpi=150)
+    plt.close(fig)
+
+    # 3. Эволюция цен
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(K, C[0, :], 'k--', label='T=0', linewidth=2)
+    ax.plot(K, C[-1, :], 'r-', label=f'T={T[-1]:.2f}', linewidth=2)
+    ax.set_xlabel('Цена исполнения (K)')
+    ax.set_ylabel('Option Price')
+    ax.set_title('Dupire CN: Price Evolution')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.savefig("Dupire_CN_evolution.png", dpi=150)
+    plt.close(fig)
+
 
 def compare_with_black_scholes(S0, K_bs, T_bs, r, sigma, C_dupire, K_dupire, T_dupire):
     """
@@ -263,22 +282,18 @@ def compare_with_black_scholes(S0, K_bs, T_bs, r, sigma, C_dupire, K_dupire, T_d
     
     return C_bs, C_dupire_val
 
-def build_dupire_surface_cn(data, S_t, r, sigma, tau):
+def build_dupire_surface_cn(S_t, r, sigma, N, M):
     """
    Строит поверхность цен опционов методом Крэнка-Николсона для уравнения Дюпира:
     Решает PDE уравнения Дюпира численным методом для получения цен C(K,T)
 
     Параметры:
-    data : pandas.DataFrame
-        DataFrame с историческими данными (используется для контекста)
     S_t : float
         Текущая цена базового актива
     r : float
         Безрисковая процентная ставка
     sigma : float
         Начальная волатильность для PDE
-    tau : float
-        Время до экспирации (используется для контекста)
     Возвращает:
     tuple (K_grid, T_grid, C_dupire, K, T)
         K_grid : ndarray
@@ -296,8 +311,6 @@ def build_dupire_surface_cn(data, S_t, r, sigma, tau):
     K_min = S_t * 0.6
     K_max = S_t * 1.4
     T_max = 1.0
-    N = 140  # шаги по страйку (более плотная сетка)
-    M = 140  # шаги по времени
 
     print("Решение уравнения Дюпира методом Кранка-Николсона...")
 
@@ -369,4 +382,30 @@ def calculate_dupire_volatility_improved(K_grid, T_grid, C_grid, r):
         cap = 3.0 * np.nanmedian(finite_vals)
         local_vol_grid = np.clip(local_vol_grid, 0, cap)
 
-    return local_vol_grid
+    T_vals = T_grid[:, 0]
+    K_vals = K_grid[0, :]
+
+    valid_mask = ~np.isnan(local_vol_grid)
+    points_T = T_grid[valid_mask]
+    points_K = K_grid[valid_mask]
+    values = local_vol_grid[valid_mask]
+
+
+    values_smooth = gaussian_filter(values, sigma=1)
+
+    spline = RectBivariateSpline(
+        T_vals,
+        K_vals,
+        np.nan_to_num(local_vol_grid, nan=np.nanmedian(finite_vals)),
+        kx=3, ky=3
+    )
+
+    interpolated = spline(T_vals, K_vals)
+
+    filled = local_vol_grid.copy()
+    filled[np.isnan(filled)] = interpolated[np.isnan(filled)]
+
+    filled = gaussian_filter(filled, sigma=1.0)
+
+  
+    return filled
