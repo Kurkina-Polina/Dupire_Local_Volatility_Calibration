@@ -233,4 +233,5 @@ def plot_price_volatility(data, ticker):
     ax2.grid(True)
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig('historical_close_volatility.png', dpi=300, bbox_inches='tight')
+    plt.close()

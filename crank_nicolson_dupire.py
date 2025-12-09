@@ -161,6 +161,7 @@ def calibrate_dupire_volatility(market_prices, K, T, r):
     return local_vol
 
 def plot_dupire_cn_solution(K, T, C, local_vol=None, save_folder="./"):
+    #FIXME fix comment
     """
     Калибрует локальную волатильность по формуле Дюпира используя рыночные цены опционов.
 
@@ -297,7 +298,7 @@ def compare_with_black_scholes(S0, K_bs, T_bs, r, sigma, C_dupire, K_dupire, T_d
     
     return C_bs, C_dupire_val
 
-def build_dupire_surface_cn(S_t, r, sigma, N=140, M=140):
+def build_dupire_surface_cn(S_t, r, sigma, N, M):
     """
    Строит поверхность цен опционов методом Крэнка-Николсона для уравнения Дюпира:
     Решает PDE уравнения Дюпира численным методом для получения цен C(K,T)

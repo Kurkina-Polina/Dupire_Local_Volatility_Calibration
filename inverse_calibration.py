@@ -200,18 +200,17 @@ def calibrate_local_vol(market_prices, K_full, T_full, K_nodes, T_nodes, sigma_i
     return sigma_calibrated, res
 
 
-def inverse_problem(S0, K_min=60.0, K_max=140.0, r=0.03, sigma_true = 0.20, sigma_init = 0.12, N=100, M=60, T_max = 1.0):
+def inverse_problem(S0, K_min, K_max, r, sigma_true, sigma_init, N, M, T_max = 1.0):
     """Toy inverse problem on synthetic data (constant true vol)."""
     # Полный набор цен исполнения (strikes) / времени до экспирации, на которых решается дифференциальное уравнение
     K_full = np.linspace(K_min, K_max, N)
     T_full = np.linspace(0.01, T_max, M)
 
-    print("Inverse problem demo: synthetic constant vol")
-    print(f"  PDE grid: {N} strikes × {M} times")
-    print(f"  True sigma: {sigma_true}")
+    print(f"Сетка Уравнения в Частных Производных: {N} страйков × {M} временных шагов")
+    print(f"Среднее значение истинной волатильности: {sigma_true}")
 
     # Forward prices with true sigma
-    print("  Generating synthetic market prices...")
+    print("Получение Рыночных цен опционов... Это займет время")
     sigma_true_grid = np.full((M, N), sigma_true)
     _, _, market_prices = solve_dupire_pde(
         S0=S0,
@@ -225,14 +224,12 @@ def inverse_problem(S0, K_min=60.0, K_max=140.0, r=0.03, sigma_true = 0.20, sigm
         sigma_grid=sigma_true_grid,
     )
 
-    # параметрическая сетка для волатильности - где ищутся неизвестные параметры
+    # Параметрическая сетка для волатильности - где ищутся неизвестные параметры
     K_nodes = np.linspace(K_min, K_max, 10)
     T_nodes = np.linspace(0.01, T_max, 8)
-    print(f"  Parameter grid: {len(K_nodes)} K-nodes × {len(T_nodes)} T-nodes")
-
-
-    print(f"  Initial guess: sigma={sigma_init}")
-    print("  Starting calibration with adaptive regularization...")
+    print(f"Сетка параметров: {len(K_nodes)} узлов по K × {len(T_nodes)} узлов по T")
+    print(f"Начальное приближение: sigma={sigma_init}")
+    print("Идет калибровка с адаптивной регуляризацией...")
     
     sigma_calibrated, res = calibrate_local_vol(
         market_prices=market_prices,
@@ -243,7 +240,7 @@ def inverse_problem(S0, K_min=60.0, K_max=140.0, r=0.03, sigma_true = 0.20, sigm
         sigma_init=sigma_init,
         r=r,
         S0=S0,
-        lam=2e-3,  # Smaller regularization for better fit
+        lam=2e-3,
         maxiter=50,
         verbose=True,
     )
@@ -257,12 +254,10 @@ def inverse_problem(S0, K_min=60.0, K_max=140.0, r=0.03, sigma_true = 0.20, sigm
         "rmse": float(err),
     }
 
-    print(f"\n  Calibration complete!")
-    print(f"  RMSE: {err:.6f} (target 0.0000)")
-    print(f"  Recovered sigma stats:")
-    print(f"    min={stats['min']:.4f}, max={stats['max']:.4f}")
-    print(f"    mean={stats['mean']:.4f}, median={stats['median']:.4f}")
-    print(f"  Optimizer: {res.message}")
+    print(f"\nСКО: {err:.6f} (целевое значение: 0.0000)")
+    print(f"Статистика восстановленной волатильности:")
+    print(f"мин={stats['min']:.4f}, макс={stats['max']:.4f}")
+    print(f"среднее={stats['mean']:.4f}, медиана={stats['median']:.4f}")
 
     # Визуализация: сохраняем heatmap оцененной и истинной волатильности
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
@@ -279,9 +274,9 @@ def inverse_problem(S0, K_min=60.0, K_max=140.0, r=0.03, sigma_true = 0.20, sigm
     plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
 
     plt.tight_layout()
-    plt.savefig("inverse_demo_sigma.png", dpi=120)
+    plt.savefig("inverse__sigma.png", dpi=120)
     plt.close(fig)
-    print("  plot saved to inverse_demo_sigma.png")
+    print("  plot saved to inverse__sigma.png")
 
     return sigma_calibrated
 
