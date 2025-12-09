@@ -160,7 +160,7 @@ def calibrate_dupire_volatility(market_prices, K, T, r):
     
     return local_vol
 
-def plot_dupire_cn_solution(K, T, C, local_vol=None):
+def plot_dupire_cn_solution(K, T, C, local_vol=None, save_folder="./"):
     """
     Калибрует локальную волатильность по формуле Дюпира используя рыночные цены опционов.
 
@@ -194,46 +194,50 @@ def plot_dupire_cn_solution(K, T, C, local_vol=None):
     - Использует центральные разности для численного дифференцирования
     - Граничные точки не вычисляются из-за отсутствия соседних точек для производных
     """
+    import os
+    if not os.path.exists(save_folder):
+        os.makedirs(save_folder)
+
     T_grid, K_grid = np.meshgrid(T, K)
-    
-    fig = plt.figure(figsize=(16, 10))
-    
+
     # 1. Поверхность цен опционов
-    ax1 = fig.add_subplot(2, 2, 1, projection='3d')
-    surf1 = ax1.plot_surface(K_grid, T_grid, C.T, cmap='viridis', alpha=0.8)
-    ax1.set_xlabel('Цена исполнения (K)')
-    ax1.set_ylabel('Время до экспирации (T)')
-    ax1.set_zlabel('Option Price')
-    ax1.set_title('Решение уравнения Дюпира\n(Метод Кранка-Николсона)')
-    plt.colorbar(surf1, ax=ax1, shrink=0.5)
-    
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    surf = ax.plot_surface(K_grid, T_grid, C.T, cmap='viridis', alpha=0.8)
+    ax.set_xlabel('Цена исполнения (K)')
+    ax.set_ylabel('Время до экспирации (T)')
+    ax.set_zlabel('Option Price')
+    ax.set_title('Dupire CN: Option Price Surface')
+    plt.colorbar(surf, ax=ax, shrink=0.5)
+    fig.savefig(os.path.join(save_folder, "Dupire_CN_prices.png"), dpi=150)
+    plt.close(fig)
+
     # 2. Срезы по времени
-    ax2 = fig.add_subplot(2, 2, 2)
+    fig, ax = plt.subplots(figsize=(10, 6))
     time_indices = [int(0.1*len(T)), int(0.5*len(T)), int(0.9*len(T))]
     colors = ['red', 'blue', 'green']
-    
     for idx, color in zip(time_indices, colors):
-        ax2.plot(K, C[idx, :], color=color, 
-                label=f'T = {T[idx]:.2f}', linewidth=2)
-    
-    ax2.set_xlabel('Цена исполнения (K)')
-    ax2.set_ylabel('Option Price')
-    ax2.set_title('Срезы по времени')
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)
-    
-    # 4. Сравнение начальных и конечных выплат
-    ax4 = fig.add_subplot(2, 2, 4)
-    ax4.plot(K, C[0, :], 'k--', label='Начальное условие (T=0)', linewidth=2)
-    ax4.plot(K, C[-1, :], 'r-', label=f'Решение (T={T[-1]:.2f})', linewidth=2)
-    ax4.set_xlabel('Цена исполнения (K)')
-    ax4.set_ylabel('Option Price')
-    ax4.set_title('Эволюция цен во времени')
-    ax4.legend()
-    ax4.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.show()
+        ax.plot(K, C[idx, :], color=color, label=f'T = {T[idx]:.2f}', linewidth=2)
+    ax.set_xlabel('Цена исполнения (K)')
+    ax.set_ylabel('Option Price')
+    ax.set_title('Dupire CN: Slices over Time')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.savefig(os.path.join(save_folder, "Dupire_CN_slices.png"), dpi=150)
+    plt.close(fig)
+
+    # 3. Эволюция цен
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(K, C[0, :], 'k--', label='T=0', linewidth=2)
+    ax.plot(K, C[-1, :], 'r-', label=f'T={T[-1]:.2f}', linewidth=2)
+    ax.set_xlabel('Цена исполнения (K)')
+    ax.set_ylabel('Option Price')
+    ax.set_title('Dupire CN: Price Evolution')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.savefig(os.path.join(save_folder, "Dupire_CN_evolution.png"), dpi=150)
+    plt.close(fig)
+
 
 def compare_with_black_scholes(S0, K_bs, T_bs, r, sigma, C_dupire, K_dupire, T_dupire):
     """
@@ -295,7 +299,6 @@ def compare_with_black_scholes(S0, K_bs, T_bs, r, sigma, C_dupire, K_dupire, T_d
 
 def build_dupire_surface_cn(S_t, r, sigma, N=140, M=140):
     #FIXME: del data and tau and from comment
-    #FIXME сделать сохранение 2д графиков в файлы, изменить названия figure1 на название метода по которому получен график
     """
    Строит поверхность цен опционов методом Крэнка-Николсона для уравнения Дюпира:
     Решает PDE уравнения Дюпира численным методом для получения цен C(K,T)

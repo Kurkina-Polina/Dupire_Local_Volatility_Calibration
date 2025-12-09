@@ -84,7 +84,8 @@ if __name__ == "__main__":
     print("\n" + "="*60)
     print("ОБРАТНАЯ ЗАДАЧА")
     print("="*60)
-    #FIXME sigma_true is local_vol_surface_cn ??? надо в local_vol_surface_cn сделать обработку NaN
+
+    #FIXME sigma_true is local_vol_surface_cn ??? 
 
     sigma_calibrated = inverse_problem(
         S0=S_t,
