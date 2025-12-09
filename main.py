@@ -54,7 +54,7 @@ if __name__ == "__main__":
     print(f"Локальная волатильность (средняя): {np.nanmean(local_vol_surface):.4f}")
 
     # Построение поверхности Дюпира
-    plot_dupire_surface(K_grid, T_grid, local_vol_surface)
+    plot_dupire_surface(K_grid, T_grid, local_vol_surface, "Dupire")
 
     print("\n" + "="*60)
     print("МЕТОД КРАНКА-НИКОЛСОНА ДЛЯ УРАВНЕНИЯ ДЮПИРА")
@@ -73,7 +73,7 @@ if __name__ == "__main__":
     
     # 5. Визуализация локальной волатильности из метода Кранка-Николсона
     print("\n--- Визуализация поверхности локальной волатильности (Кранк-Николсон) ---")
-    plot_dupire_surface(K_grid_cn, T_grid_cn, local_vol_surface_cn)
+    plot_dupire_surface(K_grid_cn, T_grid_cn, local_vol_surface_cn, "Crank Nicolson")
     
     print("\n--- Анализ решения Дюпира методом Кранка-Николсона ---")
     print(f"Диапазон страйков: {K_grid_cn[0, 0]:.1f} - {K_grid_cn[0, -1]:.1f}")
@@ -85,7 +85,7 @@ if __name__ == "__main__":
     print("ОБРАТНАЯ ЗАДАЧА")
     print("="*60)
 
-    #FIXME sigma_true is local_vol_surface_cn ??? 
+    #FIXME sigma_true is local_vol_surface_cn ???
 
     sigma_calibrated = inverse_problem(
         S0=S_t,
@@ -97,6 +97,8 @@ if __name__ == "__main__":
         N=N,
         M=M,
     )
+
+    # Вычисление цен кол опционов с помощью откалиброванной волатильности
     _, _, C_calibrated = solve_dupire_pde(
         S0=S_t,
         r=r,
@@ -109,6 +111,7 @@ if __name__ == "__main__":
         sigma_grid=sigma_calibrated
     )
 
+    # График сравнения цен кол опционов
     plot_3d_price_comparison(
         K_array, T_array,
         C_grid_cn,

@@ -97,9 +97,9 @@ def calculate_dupire_volatility(K_grid, T_grid, C_grid, r):
 
     return local_vol_grid
 
-def plot_dupire_surface(K_grid, T_grid, local_vol_surface):
+def plot_dupire_surface(K_grid, T_grid, local_vol_surface, name):
     """
-    Строит комплексную визуализацию поверхности локальной волатильности Дюпира:
+    Строит комплексную визуализацию поверхности локальной волатильности:
     - 3D поверхность для общего обзора
     - Контурный график для анализа уровней волатильности
     - Срезы по времени и страйкам для детального изучения
@@ -112,7 +112,7 @@ def plot_dupire_surface(K_grid, T_grid, local_vol_surface):
     T_grid : ndarray
         2D сетка времени до экспирации [T, K]
     local_vol_surface : ndarray
-        2D сетка локальных волатильностей, рассчитанных по формуле Дюпира
+        2D сетка локальных волатильностей, рассчитанных по формуле Дюпира или Крэнка-Никольсона
 
     Возвращает:
     None
@@ -124,6 +124,7 @@ def plot_dupire_surface(K_grid, T_grid, local_vol_surface):
 
     # ПЕРВАЯ КАРТИНКА: 3 графика
     fig1 = plt.figure(figsize=(16, 12))
+    fig1.suptitle(name, fontsize=16)
 
     # 1. 3D поверхность (левый верх)
     ax1 = fig1.add_subplot(2, 2, 1, projection='3d')
@@ -159,10 +160,12 @@ def plot_dupire_surface(K_grid, T_grid, local_vol_surface):
     ax3.grid(True, alpha=0.3)
 
     plt.tight_layout()
+    fig1.savefig('local_volatility_1_'+name+'.png', dpi=300, bbox_inches='tight')
     plt.show()
 
     # ВТОРАЯ КАРТИНКА: 2 графика
     fig2, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+    fig2.suptitle(name, fontsize=16)
 
     # 4. Heatmap (левая половина)
     im = ax1.imshow(clean_vol,
@@ -189,10 +192,11 @@ def plot_dupire_surface(K_grid, T_grid, local_vol_surface):
     ax2.grid(True, alpha=0.3)
 
     plt.tight_layout()
+    fig1.savefig('local_volatility_2_'+name+'.png', dpi=300, bbox_inches='tight')
     plt.show()
 
     # Вывод статистики
-    print("\n--- Анализ поверхности локальной волатильности ---")
+    print("\n--- Анализ поверхности локальной волатильности ", name, " ---")
     print(f"Минимальная локальная волатильность: {np.nanmin(local_vol_surface):.4f}")
     print(f"Максимальная локальная волатильность: {np.nanmax(local_vol_surface):.4f}")
     print(f"Средняя локальная волатильность: {np.nanmean(local_vol_surface):.4f}")

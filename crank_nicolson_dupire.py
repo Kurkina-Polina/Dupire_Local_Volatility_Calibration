@@ -298,22 +298,17 @@ def compare_with_black_scholes(S0, K_bs, T_bs, r, sigma, C_dupire, K_dupire, T_d
     return C_bs, C_dupire_val
 
 def build_dupire_surface_cn(S_t, r, sigma, N=140, M=140):
-    #FIXME: del data and tau and from comment
     """
    Строит поверхность цен опционов методом Крэнка-Николсона для уравнения Дюпира:
     Решает PDE уравнения Дюпира численным методом для получения цен C(K,T)
 
     Параметры:
-    data : pandas.DataFrame
-        DataFrame с историческими данными (используется для контекста)
     S_t : float
         Текущая цена базового актива
     r : float
         Безрисковая процентная ставка
     sigma : float
         Начальная волатильность для PDE
-    tau : float
-        Время до экспирации (используется для контекста)
     Возвращает:
     tuple (K_grid, T_grid, C_dupire, K, T)
         K_grid : ndarray
