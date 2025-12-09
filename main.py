@@ -85,8 +85,6 @@ if __name__ == "__main__":
     print("ОБРАТНАЯ ЗАДАЧА")
     print("="*60)
 
-    #FIXME sigma_true is local_vol_surface_cn ???
-
     sigma_calibrated = inverse_problem(
         S0=S_t,
         K_min=min(K_array),
