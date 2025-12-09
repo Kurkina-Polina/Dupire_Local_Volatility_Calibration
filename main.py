@@ -66,7 +66,7 @@ if __name__ == "__main__":
     local_vol_surface_cn = calculate_dupire_volatility_improved(K_grid_cn, T_grid_cn, C_grid_cn, r)
     
     # 3. Визуализируем решение Дюпира методом Кранка-Николсона
-    plot_dupire_cn_solution(K_grid_cn[0, :], T_grid_cn[:, 0], C_grid_cn, local_vol_surface_cn)
+    plot_dupire_cn_solution(K_grid_cn[0, :], T_grid_cn[:, 0], C_grid_cn)
     
     # 4. Сравнение с Блэка-Шоулз
     compare_with_black_scholes(S_t, K, tau, r, sigma, C_grid_cn, K_array, T_array)
@@ -90,7 +90,7 @@ if __name__ == "__main__":
         K_min=min(K_array),
         K_max=max(K_array),
         r=r,
-        sigma_true = sigma,
+        sigma_true = local_vol_surface_cn,
         sigma_init = 0.12,
         N=N,
         M=M,

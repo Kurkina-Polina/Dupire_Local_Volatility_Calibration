@@ -207,7 +207,7 @@ def inverse_problem(S0, K_min, K_max, r, sigma_true, sigma_init, N, M, T_max = 1
     T_full = np.linspace(0.01, T_max, M)
 
     print(f"Сетка Уравнения в Частных Производных: {N} страйков × {M} временных шагов")
-    print(f"Среднее значение истинной волатильности: {sigma_true}")
+    print(f"Среднее значение истинной волатильности: {np.nanmean(sigma_true):.4f}")
 
     # Forward prices with true sigma
     print("Получение Рыночных цен опционов... Это займет время")
