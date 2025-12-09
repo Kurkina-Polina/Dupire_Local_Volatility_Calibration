@@ -4,30 +4,10 @@ from scipy.interpolate import RegularGridInterpolator
 from scipy.optimize import minimize
 
 from crank_nicolson_dupire import solve_dupire_pde
-import yfinance as yf
+
 
 def _laplacian_penalty(alpha_grid):
-    """
-    Вычисляет штраф за гладкость на основе дискретного лапласиана для сетки значений дисперсии.
-
-    Реализует регуляризационный штраф, основанный на аппроксимации лапласиана второго порядка,
-    который измеряет локальные изменения значений на сетке. Штраф вычисляется как сумма
-    квадратов разностей между центральной точкой и её четырьмя ближайшими соседями
-    (по вертикали и горизонтали).
-    
-    Формула: penalty = Σ [ (α(i,j) - α(i-1,j))² + (α(i,j) - α(i+1,j))² +
-                         (α(i,j) - α(i,j-1))² + (α(i,j) - α(i,j+1))² ] / ((m-2)*(n-2))
-
-    Параметры:
-    alpha_grid : ndarray, shape (m, n)
-        2D сетка значений дисперсии или волатильности в логарифмической шкале.
-        Обычно представляет собой логарифмы узлов локальной волатильности.
-    
-    Возвращает:
-    float
-        Нормализованное значение штрафа за гладкость. Усредняется по всем внутренним точкам
-        для независимости от размера сетки.
-    """
+    """Discrete Laplacian-based smoothness penalty for variance nodes."""
     pen = 0.0
     m, n = alpha_grid.shape
     for i in range(1, m - 1):
@@ -41,30 +21,7 @@ def _laplacian_penalty(alpha_grid):
 
 
 def _build_sigma_grid(alpha, K_nodes, T_nodes, K_full, T_full):
-    """
-    Построение сетки волатильности методом билинейной интерполяции из разреженных узлов дисперсии.
-
-    Параметры:
-    alpha : ndarray, shape (len(T_nodes)*len(K_nodes),)
-        Вектор параметров в логарифмической шкале, представляющий значения дисперсии
-        в узлах (T_nodes, K_nodes). Упорядочен как [α(T0,K0), α(T0,K1), ..., α(T1,K0), ...]
-    K_nodes : ndarray, shape (M,)
-        Разреженная сетка цен исполнения (страйков) для узлов дисперсии
-    T_nodes : ndarray, shape (N,)
-        Разреженная сетка времен до экспирации для узлов дисперсии
-    K_full : ndarray, shape (P,)
-        Полная плотная сетка цен исполнения для решателя PDE
-    T_full : ndarray, shape (Q,)
-        Полная плотная сетка времен до экспирации для решателя PDE
-
-    Возвращает:
-    sigma_grid : ndarray, shape (Q, P)
-        2D сетка локальных волатильностей на полной сетке (T_full × K_full)
-
-    Особенности:
-    ------------
-    - Использует билинейную интерполяцию для плавного перехода между узлами
-    """
+    """Bilinear interpolation from coarse variance nodes to PDE grid."""
     alpha_grid = alpha.reshape(len(T_nodes), len(K_nodes))
     interp = RegularGridInterpolator((T_nodes, K_nodes), alpha_grid, bounds_error=False, fill_value=None)
     TT, KK = np.meshgrid(T_full, K_full, indexing="ij")
@@ -72,173 +29,17 @@ def _build_sigma_grid(alpha, K_nodes, T_nodes, K_full, T_full):
     sigma_grid = np.sqrt(np.clip(interp(pts).reshape(TT.shape), 1e-8, None))
     return sigma_grid
 
-loss = 8.765375
-def get_option_prices_simple(ticker, evaluation_date, max_expirations=3):
-    """
-    Пполчение реальных цен опционов.
-
-    Параметры:
-    ----------
-    ticker : str
-        Тикер акции (например, "SPY")
-    evaluation_date : str
-        Дата анализа в формате 'YYYY-MM-DD'
-    max_expirations : int
-        Сколько дат экспирации брать (обычно 3)
-
-    Возвращает:
-    -----------
-    all_calls : DataFrame
-        Данные опционов CALL
-    S0 : float
-        Цена акции на evaluation_date
-    """
-
-    import yfinance as yf
-    import pandas as pd
-    from datetime import datetime
-
-    print(f"Получаем опционы {ticker} на дату {evaluation_date}")
-
-    # 1. Создаем объект тикера
-    stock = yf.Ticker(ticker)
-
-    # 2. Получаем цену акции на evaluation_date
-    # Берем исторические данные за последние 5 дней от evaluation_date
-    hist = stock.history(period="5d", end=evaluation_date)
-    S0 = float(hist['Close'].iloc[-1])
-    print(f"Цена акции {ticker}: ${S0:.2f}")
-
-    # 3. Получаем список доступных дат экспирации
-    expirations = stock.options
-
-    # 4. Создаем список для хранения данных
-    all_data = []
-
-    # 5. Обрабатываем каждую экспирацию (первые max_expirations)
-    for expiry in expirations[:max_expirations]:
-
-        # Преобразуем даты
-
-        current_date = datetime.strptime(evaluation_date, '%Y-%m-%d').date()  # Только дата
-        expiry_date = datetime.strptime(expiry, '%Y-%m-%d').date()
-
-        T_days = max(0, (expiry_date - current_date).days)  # Защита от отрицательных значений
-        T_years = T_days / 365.0
-
-
-        # Получаем цепочку опционов
-        opt_chain = stock.option_chain(expiry)
-        calls = opt_chain.calls.copy()
-
-        # Проверяем, что есть данные
-        if calls.empty:
-            continue
-
-        # Добавляем вычисляемые поля
-        calls['T'] = T_years
-        calls['expiry'] = expiry
-        calls['moneyness'] = calls['strike'] / S0
-
-        # Фильтруем: оставляем только опционы с ценой > 0
-        calls_filtered = calls[calls['lastPrice'] > 0]
-
-
-        # Отбираем нужные колонки
-        calls_selected = calls_filtered[['strike', 'T', 'lastPrice', 'volume']]
-
-        # Переименовываем
-        calls_selected.columns = ['K', 'T', 'price', 'volume']
-
-        all_data.append(calls_selected)
-
-    # 6. Объединяем все данные
-    if not all_data:
-        print("Не удалось получить данные опционов!")
-        return None, S0
-
-    all_calls = pd.concat(all_data, ignore_index=True)
-
-    # 7. Сортируем и фильтруем
-    all_calls = all_calls.sort_values(['T', 'K'])
-
-    return all_calls, S0
-
-
-def prepare_market_data_for_calibration(option_data, S0):
-    """
-    Преобразует DataFrame опционов в данные для калибровки.
-
-    Параметры:
-    ----------
-    option_data : DataFrame
-        Данные опционов из get_option_prices_simple()
-    S0 : float
-        Цена акции
-
-    Возвращает:
-    -----------
-    market_prices : ndarray
-        Матрица цен опционов
-    K_full : ndarray
-        Сетка страйков
-    T_full : ndarray
-        Сетка времён
-    """
-    import numpy as np
-
-    # Получаем уникальные значения страйков и времён
-    unique_K = np.sort(option_data['K'].unique())
-    unique_T = np.sort(option_data['T'].unique())
-
-    # Создаем матрицу цен
-    market_prices = np.full((len(unique_T), len(unique_K)), np.nan)
-
-    # Заполняем матрицу
-    for idx, row in option_data.iterrows():
-        t_idx = np.where(unique_T == row['T'])[0][0]
-        k_idx = np.where(unique_K == row['K'])[0][0]
-        market_prices[t_idx, k_idx] = row['price']
-
-    print(f"Создана матрица цен: {market_prices.shape[0]} времён × {market_prices.shape[1]} страйков")
-    print(f"Заполнено: {np.sum(~np.isnan(market_prices))} из {market_prices.size} ячеек")
-
-    return market_prices, unique_K, unique_T
 
 def calibrate_local_vol(market_prices, K_full, T_full, K_nodes, T_nodes, sigma_init, r, S0, lam=1e-2, maxiter=50, verbose=True):
     """
-    Решение обратной задачи: калибровка поверхности локальной волатильности σ(K,T) по рыночным ценам опционов.
-
-    Параметры:
-    market_prices : ndarray, shape (M_full, N_full)
-        Матрица целевых цен опционов CALL на полной сетке K_full × T_full
-    K_full : ndarray, shape (N_full,)
-        Полная сетка цен исполнения, используемая в решателе PDE
-    T_full : ndarray, shape (M_full,)
-        Полная сетка времен до экспирации, используемая в решателе PDE
-    K_nodes : ndarray, shape (M_nodes,)
-        Разреженная сетка страйков для параметров дисперсии (M_nodes << N_full)
-    T_nodes : ndarray, shape (N_nodes,)
-        Разреженная сетка времен для параметров дисперсии (N_nodes << M_full)
-    sigma_init : float
-        Начальное предположение о волатильности (постоянная по всей поверхности)
-    r : float
-        Безрисковая процентная ставка
-    S0 : float
-        Текущая цена базового актива
-    lam : float, default=1e-2
-        Вес Тихоновской регуляризации, контролирующий гладкость поверхности
-    maxiter : int, default=50
-        Максимальное количество итераций оптимизатора
-    verbose : bool, default=True
-        Флаг вывода информации о процессе оптимизации
-
-    Возвращает:
-    sigma_calibrated : ndarray, shape (M_full, N_full)
-        Откалиброванная поверхность локальной волатильности на полной сетке PDE
-    res : OptimizeResult
-        Результат работы оптимизатора с информацией о сходимости и истории оптимизации
-
+    Inverse problem: fit local volatility surface sigma(K,T) to market option prices.
+    - market_prices: ndarray [M_full, N_full] target CALL prices on K_full x T_full grid
+    - K_full, T_full: 1D arrays defining PDE grid used for pricing
+    - K_nodes, T_nodes: coarse grids for variance parameters
+    - sigma_init: initial guess (scalar) for volatility
+    - lam: Tikhonov weight on surface smoothness (Laplacian of variance)
+    - maxiter: optimizer iterations
+    Returns calibrated sigma_grid over full PDE grid.
     """
     M_full, N_full = market_prices.shape
     alpha0 = np.full((len(T_nodes), len(K_nodes)), sigma_init**2)
@@ -248,24 +49,6 @@ def calibrate_local_vol(market_prices, K_full, T_full, K_nodes, T_nodes, sigma_i
     best_loss = [float('inf')]
 
     def loss(alpha_vec):
-        """
-        Целевая функция для оптимизации поверхности локальной волатильности.
-
-        Вычисляет комбинированную функцию потерь, состоящую из двух компонентов:
-        1. Несогласие (misfit) - квадратичная ошибка между модельными и рыночными ценами опционов
-        2. Регуляризация (regularization) - штраф за негладкость поверхности дисперсии
-
-        Полная потеря: L(α) = MSE(C_model, C_market) + λ × Laplacian(exp(α))
-
-        alpha_vec : ndarray, shape (len(T_nodes)*len(K_nodes),)
-            Вектор параметров в логарифмической шкале, представляющий значения дисперсии
-            на разреженной сетке узлов (T_nodes, K_nodes)
-
-        Возвращает:
-        float
-            Общее значение функции потерь, включающее несогласие с рыночными данными
-            и штраф за негладкость поверхности
-        """
         iteration[0] += 1
         alpha_grid = alpha_vec.reshape(len(T_nodes), len(K_nodes))
         sigma_grid = _build_sigma_grid(alpha_vec, K_nodes, T_nodes, K_full, T_full)
@@ -289,8 +72,7 @@ def calibrate_local_vol(market_prices, K_full, T_full, K_nodes, T_nodes, sigma_i
         if total_loss < best_loss[0]:
             best_loss[0] = total_loss
             if verbose and iteration[0] % 2 == 0:
-                with open('Iterations_calibrate_local.txt', 'a') as f:
-                    f.write(f"    Итерация {iteration[0]:3d}: потеря={total_loss:.6f}, ошибка={misfit:.6f}, регуляризация={reg:.6f}\n")
+                print(f"    Iter {iteration[0]:3d}: loss={total_loss:.6f}, misfit={misfit:.6f}, reg={reg:.6f}")
         
         return total_loss
 
@@ -300,84 +82,48 @@ def calibrate_local_vol(market_prices, K_full, T_full, K_nodes, T_nodes, sigma_i
     return sigma_calibrated, res
 
 
+def demo_inverse_problem():
+    """Toy inverse problem on synthetic data (constant true vol)."""
+    S0 = 100.0
+    r = 0.03
+    sigma_true = 0.20
+    K_min, K_max = 60.0, 140.0
+    T_max = 1.0
+    N, M = 100, 60  # More refined PDE grid for accuracy
 
-def calibrate_volatility_surface(market_prices, K_full, T_full, S0, r,
-                                 K_nodes=None, T_nodes=None,
-                                 sigma_init=0.20, lam=2e-3, maxiter=50,
-                                 plot_results=True, verbose=True):
-    """
-    Калибровка поверхности локальной волатильности по рыночным данным.
+    K_full = np.linspace(K_min, K_max, N)
+    T_full = np.linspace(0.01, T_max, M)
 
-    Параметры:
-    ----------
-    market_prices : ndarray, shape (M, N)
-        РЕАЛЬНЫЕ рыночные цены опционов CALL на сетке K_full × T_full
-    K_full : ndarray, shape (N,)
-        Сетка страйков из рыночных данных
-    T_full : ndarray, shape (M,)
-        Сетка времен до экспирации из рыночных данных (в годах)
-    S0 : float
-        Текущая цена базового актива
-    r : float
-        Безрисковая процентная ставка
-    K_nodes : ndarray, optional
-        Разреженная сетка страйков для параметризации
-    T_nodes : ndarray, optional
-        Разреженная сетка времен для параметризации
-    sigma_init : float, default=0.20
-        Начальное предположение о волатильности
-    lam : float, default=2e-3
-        Коэффициент регуляризации
-    maxiter : int, default=50
-        Максимальное число итераций
-    plot_results : bool, default=True
-        Сохранять ли визуализацию
-    verbose : bool, default=True
-        Выводить ли информацию о процессе
+    print("Inverse problem demo: synthetic constant vol")
+    print(f"  PDE grid: {N} strikes × {M} times")
+    print(f"  True sigma: {sigma_true}")
 
-    Возвращает:
-    -----------
-    sigma_calibrated : ndarray, shape (M, N)
-        Откалиброванная поверхность локальной волатильности
-    res : OptimizeResult
-        Результат оптимизации
-    """
+    # Forward prices with true sigma
+    print("  Generating synthetic market prices...")
+    sigma_true_grid = np.full((M, N), sigma_true)
+    _, _, market_prices = solve_dupire_pde(
+        S0=S0,
+        r=r,
+        initial_vol=sigma_true,
+        K_min=K_min,
+        K_max=K_max,
+        T_max=T_max,
+        N=N,
+        M=M,
+        sigma_grid=sigma_true_grid,
+    )
 
-    # Вывод начальных параметров
-    print("Начальные параметры")
-    print(f"  Базовая цена актива (S0): {S0:.2f}")
-    print(f"  Безрисковая ставка (r): {r:.4f} ({r*100:.2f}%)")
-    print(f"  Начальное предположение (sigma_init): {sigma_init:.4f}")
-    print(f"  Размерность данных: {len(T_full)}×{len(K_full)} (T×K)")
-    print(f"  Диапазон страйков: [{K_full.min():.2f}, {K_full.max():.2f}]")
-    print(f"  Диапазон времён: [{T_full.min():.3f}, {T_full.max():.3f}] лет")
+    # Finer parameter grid for better recovery
+    K_nodes = np.linspace(K_min, K_max, 10)
+    T_nodes = np.linspace(0.01, T_max, 8)
+    print(f"  Parameter grid: {len(K_nodes)} K-nodes × {len(T_nodes)} T-nodes")
 
-    # Проверка наличия NaN в рыночных ценах
-    nan_count = np.sum(np.isnan(market_prices))
-    if nan_count > 0:
-        print(f"  Внимание: {nan_count} NaN значений в рыночных ценах")
-        # Заменяем NaN на 0 для численной устойчивости
-        market_prices_filled = np.nan_to_num(market_prices, nan=0.0)
-    else:
-        market_prices_filled = market_prices
-
-    print(f"  Диапазон цен: [{np.nanmin(market_prices):.2f}, {np.nanmax(market_prices):.2f}]")
-
-    # Автоматическое создание узловых сеток, если не заданы
-    if K_nodes is None:
-        K_nodes = np.linspace(K_full.min(), K_full.max(), 10)
-        print(f"  Создана узловая сетка по страйкам: {len(K_nodes)} точек")
-
-    if T_nodes is None:
-        T_nodes = np.linspace(T_full.min(), T_full.max(), 8)
-        print(f"  Создана узловая сетка по времени: {len(T_nodes)} точек")
-
-    print(f"  Коэффициент регуляризации: {lam}")
-    print(f"  Максимальное число итераций: {maxiter}")
-
-    # Калибровка локальной волатильности
+    sigma_init = 0.12
+    print(f"  Initial guess: sigma={sigma_init}")
+    print("  Starting calibration with adaptive regularization...")
+    
     sigma_calibrated, res = calibrate_local_vol(
-        market_prices=market_prices_filled,  # Используем заполненные данные
+        market_prices=market_prices,
         K_full=K_full,
         T_full=T_full,
         K_nodes=K_nodes,
@@ -385,58 +131,47 @@ def calibrate_volatility_surface(market_prices, K_full, T_full, S0, r,
         sigma_init=sigma_init,
         r=r,
         S0=S0,
-        lam=lam,
-        maxiter=maxiter,
-        verbose=verbose,
+        lam=2e-3,  # Smaller regularization for better fit
+        maxiter=50,
+        verbose=True,
     )
 
-    # Статистика результатов
-    print("\nРезультаты")
-    print(f"  Статус оптимизации: {res.message}")
-    print(f"  Количество итераций: {res.nit}")
-    print(f"  Финальное значение функции потерь: {loss:.6f}")
-
-    # Вычисляем статистику калиброванной поверхности
+    err = np.mean((sigma_calibrated - sigma_true) ** 2) ** 0.5
     stats = {
-        "min": float(np.nanmin(sigma_calibrated)),
-        "max": float(np.nanmax(sigma_calibrated)),
-        "mean": float(np.nanmean(sigma_calibrated)),
-        "median": float(np.nanmedian(sigma_calibrated)),
-        "std": float(np.nanstd(sigma_calibrated)),
+        "min": float(np.min(sigma_calibrated)),
+        "max": float(np.max(sigma_calibrated)),
+        "mean": float(np.mean(sigma_calibrated)),
+        "median": float(np.median(sigma_calibrated)),
+        "rmse": float(err),
     }
 
-    print(f"\n  Статистика поверхности волатильности:")
-    print(f"    Мин:    {stats['min']:.4f}")
-    print(f"    Макс:   {stats['max']:.4f}")
-    print(f"    Среднее: {stats['mean']:.4f}")
-    print(f"    Медиана: {stats['median']:.4f}")
-    print(f"    Стандартное отклонение: {stats['std']:.4f}")
+    print(f"\n  Calibration complete!")
+    print(f"  RMSE: {err:.6f} (target 0.0000)")
+    print(f"  Recovered sigma stats:")
+    print(f"    min={stats['min']:.4f}, max={stats['max']:.4f}")
+    print(f"    mean={stats['mean']:.4f}, median={stats['median']:.4f}")
+    print(f"  Optimizer: {res.message}")
 
-    # Оценка качества
-    print(f"\n  Оценка качества калибровки:")
-    print(f"    Средняя волатильность: {stats['mean']:.4f}")
-    print(f"    Размах (max-min): {stats['max'] - stats['min']:.4f}")
+    # Визуализация: сохраняем heatmap оцененной и истинной волатильности
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+    im0 = axes[0].imshow(sigma_true_grid, extent=[K_min, K_max, T_max, 0], aspect="auto", cmap="viridis")
+    axes[0].set_title("True sigma")
+    axes[0].set_xlabel("K")
+    axes[0].set_ylabel("T")
+    plt.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)
+
+    im1 = axes[1].imshow(sigma_calibrated, extent=[K_min, K_max, T_max, 0], aspect="auto", cmap="viridis")
+    axes[1].set_title("Calibrated sigma")
+    axes[1].set_xlabel("K")
+    axes[1].set_ylabel("T")
+    plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
+
+    plt.tight_layout()
+    plt.savefig("inverse_demo_sigma.png", dpi=120)
+    plt.close(fig)
+
+    print("  plot saved to inverse_demo_sigma.png")
 
 
-    # Визуализация результатов
-    if plot_results:
-        plt.figure(figsize=(10, 6))
-
-        # Heatmap калиброванной волатильности
-        plt.imshow(sigma_calibrated,
-                   extent=[K_full.min(), K_full.max(), T_full.max(), T_full.min()],
-                   aspect="auto",
-                   cmap="viridis")
-
-        plt.title("Калиброванная волатильность")
-        plt.xlabel("Страйк (K)")
-        plt.ylabel("Время (T)")
-
-        plt.colorbar(label='Волатильность σ')
-
-        plt.tight_layout()
-        plt.savefig("calibrated_volatility_surface.png", dpi=120)
-        plt.close()
-        print("График сохранен в 'calibrated_volatility_surface.png'")
-
-    return sigma_calibrated, res
+if __name__ == "__main__":
+    demo_inverse_problem()

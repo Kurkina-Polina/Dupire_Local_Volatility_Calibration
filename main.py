@@ -1,6 +1,6 @@
 from crank_nicolson_dupire import *
 from dupire import *
-from inverse_calibration import *
+from inverse_calibration import demo_inverse_problem
 
 if __name__ == "__main__":
     # Конфигурация
@@ -80,47 +80,8 @@ if __name__ == "__main__":
     print(f"Диапазон времени: {T_grid_cn[0, 0]:.2f} - {T_grid_cn[-1, 0]:.2f} лет")
     print(f"Средняя локальная волатильность: {np.nanmean(local_vol_surface_cn):.4f}")
 
-    # Демонстрация обратной задачи (калибровка локальной волатильности)
+    # 6. Демонстрация обратной задачи (калибровка локальной волатильности)
     print("\n" + "="*60)
-    print("ОБРАТНАЯ ЗАДАЧА")
+    print("ОБРАТНАЯ ЗАДАЧА (ДЕМО)")
     print("="*60)
-    # 1. Получаем реальные цены опционов на конечную дату
-    evaluation_date = '2025-12-08'
-
-    option_data, current_price = get_option_prices_simple(
-        ticker=TICKER,
-        evaluation_date=evaluation_date,
-        max_expirations=3
-    )
-
-    if option_data is  None:
-        exit()
-
-    # 3. Подготавливаем данные для калибровки
-    market_prices, K_full, T_full = prepare_market_data_for_calibration(option_data, current_price)
-
-    print(f"Матрица цен: {market_prices.shape}")
-    print(f"Страйки: {len(K_full)} точек от {K_full.min():.1f} до {K_full.max():.1f}")
-    print(f"Времена: {len(T_full)} точек от {T_full.min():.3f} до {T_full.max():.3f} лет")
-
-    # 4. Создаем узловые сетки (разреженные)
-    K_nodes = np.linspace(K_full.min(), K_full.max(), 10)  # 10 узлов по страйкам
-    T_nodes = np.linspace(T_full.min(), T_full.max(), 8)   # 8 узлов по времени
-
-    # 5. Запускаем калибровку (нужно создать функцию без sigma_true)
-    from inverse_calibration import calibrate_volatility_surface
-
-    sigma_calibrated, res = calibrate_volatility_surface(
-        market_prices=market_prices,
-        K_full=K_full,
-        T_full=T_full,
-        S0=current_price,
-        r=r,
-        K_nodes=K_nodes,
-        T_nodes=T_nodes,
-        sigma_init=sigma,  # используем историческую волатильность как начальное предположение
-        lam=2e-3,
-        maxiter=50,
-        plot_results=True,
-        verbose=True
-    )
+    demo_inverse_problem()
